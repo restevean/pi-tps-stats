@@ -2,6 +2,8 @@
 
 A single-line live tokens/sec display for the [Pi coding agent](https://pi.dev).
 
+Requires pi 1.x. Validated against pi 1.0.0.
+
 While an assistant response streams, the extension shows its rolling throughput,
 average throughput, estimated output tokens, elapsed time, and model:
 
