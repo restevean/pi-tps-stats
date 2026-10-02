@@ -123,3 +123,8 @@ pi -e ./src/index.ts
 ## License
 
 [MIT](LICENSE)
+
+After `/throughput reset` during a response, live and final rates use only output
+since the reset. The final token total still describes the complete response.
+If provider usage is unavailable at reset time, the earlier output is estimated
+from its deltas and subtracted from the final rate calculation.

@@ -306,15 +306,16 @@ export default function (pi: ExtensionAPI): void {
 		const now = Date.now();
 		const stream = state;
 		const outputTokens = event.message.usage.output;
+		const windowOutputTokens = Math.max(0, outputTokens - stream.providerOutputBaseline);
 		let measurementStart = stream.measurementStartTime ?? stream.responseStartTime;
 		let measuredTokens =
-			stream.measurementStartTime === undefined ? outputTokens : measuredOutputTokens(stream, outputTokens);
+			stream.measurementStartTime === undefined ? windowOutputTokens : measuredOutputTokens(stream, windowOutputTokens);
 		if (measuredTokens < 1) {
 			// The window captured less than a full output token, for example a final provider
-			// total at or below the estimated baseline. Report whole-response timing rather
-			// than a misleading near-zero rate.
+			// total at or below the estimated baseline. Fall back to response timing
+			// (or reset timing after a reset), retaining the pre-reset token exclusion.
 			measurementStart = stream.responseStartTime;
-			measuredTokens = outputTokens;
+			measuredTokens = windowOutputTokens;
 		}
 		const elapsedSec = (now - measurementStart) / 1000;
 		const averageRate = measuredTokens / Math.max(elapsedSec, 0.001);
@@ -368,10 +369,14 @@ export default function (pi: ExtensionAPI): void {
 				case "reset":
 					if (state?.kind === "streaming") {
 						const now = Date.now();
+						state.responseStartTime = now;
 						state.measurementStartTime = now;
 						state.measurementBaseline = 0;
+						state.providerOutputBaseline =
+							state.lastProviderOutput > 0
+								? state.lastProviderOutput
+								: state.providerOutputBaseline + estimatedTokens(state.totalChars);
 						state.totalChars = 0;
-						state.providerOutputBaseline = state.lastProviderOutput;
 						state.reportedOutputTokens = 0;
 						state.samples = [];
 						state.peakRate = 0;

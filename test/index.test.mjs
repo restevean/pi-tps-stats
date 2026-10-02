@@ -400,10 +400,63 @@ test("ignores empty deltas and resets only the active measurement window", async
 
 		setNow(6000);
 		handlers.get("message_end")({ message: assistantMessage({ output: 500 }) }, ctx);
-		assert.deepEqual(view.widget, ["✓ 500 tok in 0.7s · 714 tok/s avg · peak 714 tok/s · test-model"]);
+		assert.deepEqual(view.widget, ["✓ 500 tok in 0.7s · 571 tok/s avg · peak 571 tok/s · test-model"]);
 
 		handlers.get("session_shutdown")({ reason: "quit" }, ctx);
 		assert.equal(view.widget, undefined);
 		assert.equal(view.status, undefined);
+	});
+});
+
+test("streaming reset excludes earlier reported tokens from final average and peak", async () => {
+	await withFakeClock(async (setNow) => {
+		const harness = createHarness();
+		const { handlers, commands, ctx, view } = harness;
+		handlers.get("message_start")({ message: assistantMessage() }, ctx);
+		setNow(1500);
+		usageUpdate(harness, 100);
+		setNow(2000);
+		await commands.get("throughput").handler("reset", ctx);
+		setNow(3000);
+		usageUpdate(harness, 200);
+		assert.deepEqual(view.widget, ["⚡ 100 tok/s · avg 100 tok/s · 100 tok · 1.0s · test-model"]);
+		handlers.get("message_end")({ message: assistantMessage({ output: 200 }) }, ctx);
+		assert.deepEqual(view.widget, ["✓ 200 tok in 1.0s · 100 tok/s avg · peak 100 tok/s · test-model"]);
+	});
+});
+
+test("streaming reset with no later output does not fall back to pre-reset tokens", async () => {
+	await withFakeClock(async (setNow) => {
+		const harness = createHarness();
+		const { handlers, commands, ctx, view } = harness;
+		handlers.get("message_start")({ message: assistantMessage() }, ctx);
+		setNow(1500);
+		usageUpdate(harness, 100);
+		setNow(2000);
+		await commands.get("throughput").handler("reset", ctx);
+		setNow(3000);
+		handlers.get("message_end")({ message: assistantMessage({ output: 100 }) }, ctx);
+		assert.deepEqual(view.widget, ["✓ 100 tok in 1.0s · 0.0 tok/s avg · peak 0.0 tok/s · test-model"]);
+	});
+});
+
+test("repeated resets before provider usage preserve the estimated pre-reset baseline", async () => {
+	await withFakeClock(async (setNow) => {
+		const harness = createHarness();
+		const { handlers, commands, ctx, view } = harness;
+		handlers.get("message_start")({ message: assistantMessage() }, ctx);
+		setNow(1500);
+		update(harness, "x".repeat(400));
+		setNow(2000);
+		await commands.get("throughput").handler("reset", ctx);
+		setNow(2500);
+		update(harness, "x".repeat(200));
+		setNow(3000);
+		await commands.get("throughput").handler("reset", ctx);
+		setNow(4000);
+		usageUpdate(harness, 250);
+		assert.deepEqual(view.widget, ["⚡ 100 tok/s · avg 100 tok/s · 100 tok · 1.0s · test-model"]);
+		handlers.get("message_end")({ message: assistantMessage({ output: 250 }) }, ctx);
+		assert.deepEqual(view.widget, ["✓ 250 tok in 1.0s · 100 tok/s avg · peak 100 tok/s · test-model"]);
 	});
 });
