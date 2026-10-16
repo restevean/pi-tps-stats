@@ -143,17 +143,27 @@ approximate prompt rate are no longer displayed.
 
 ## Install
 
-Install a released version, pinned to its tag:
+Install a released version, pinned to its tag.
+
+With Gentle Shell, which forwards `install` to Pi against its own home
+(`~/.gentle-shell/agent` unless you use `--link`):
+
+```bash
+gentle-shell install git:github.com/restevean/pi-tps-stats@v0.0.2
+```
+
+With plain Pi, which uses `~/.pi/agent`:
 
 ```bash
 pi install git:github.com/restevean/pi-tps-stats@v0.0.2
 ```
 
-Without the `@v0.0.2` suffix Pi follows the latest `main`, which can change.
+Without the `@v0.0.2` suffix the latest `main` is installed, which can change.
 
-Or install a local checkout:
+Or install a local checkout, with either command:
 
 ```bash
+gentle-shell install /absolute/path/to/pi-tps-stats
 pi install /absolute/path/to/pi-tps-stats
 ```
 
