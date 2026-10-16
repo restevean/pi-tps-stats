@@ -6,12 +6,13 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import tpsStatsExtension from "../src/index.ts";
 
-function createHarness({ mode = "tui", hasUI = true } = {}) {
+function createHarness({ mode = "tui", hasUI = true, withKeybindings = true } = {}) {
 	const handlers = new Map();
 	const commands = new Map();
 	const widgets = new Map();
 	const widgetCalls = [];
 	const panels = [];
+	const keybindings = {};
 	const selections = [];
 	const selectCalls = [];
 	const themeRoles = new Set();
@@ -62,7 +63,7 @@ function createHarness({ mode = "tui", hasUI = true } = {}) {
 		},
 		custom(factory, options) {
 			return new Promise((resolve) => {
-				panels.push({ component: factory(tui, theme, {}, resolve), options });
+				panels.push({ component: factory(tui, theme, withKeybindings ? keybindings : undefined, resolve), options });
 			});
 		},
 		setStatus(_key, content) {
@@ -99,6 +100,7 @@ function createHarness({ mode = "tui", hasUI = true } = {}) {
 		widgets,
 		widgetCalls,
 		panels,
+		keybindings,
 		selections,
 		selectCalls,
 		themeRoles,
@@ -1249,5 +1251,114 @@ test("a usage getter that throws does not break the handler; that field is zero"
 			h.handlers.get("message_end")({ message: { role: "assistant", model: "m", usage } }, h.ctx),
 		);
 		assert.match(h.view.widget[0], /out 80, in 0, cache 20\/0, /, h.view.widget[0]);
+	});
+});
+
+// Opens the stats panel and reports whether it closed after the given key.
+const closesOn = async (h, setNow, key) => {
+	await respond(h, setNow, 1000, 2000, { output: 100 });
+	let closed = false;
+	const open = h.commands.get("tps").handler("stats", h.ctx);
+	open.then(() => {
+		closed = true;
+	});
+	const panel = h.panels.at(-1).component;
+	panel.handleInput(key);
+	await flush();
+	// Read the answer before the cleanup below, which closes the panel on purpose.
+	const closedByKey = closed;
+	if (!closedByKey) {
+		panel.handleInput("q");
+		await open;
+	}
+	return closedByKey;
+};
+
+test("Ctrl+C closes the stats panel, like Pi's own selectors, in both key encodings", async () => {
+	for (const key of ["\u0003", "\u001b[99;5u"]) {
+		await withFakeClock(async (setNow) => {
+			assert.equal(await closesOn(createHarness(), setNow, key), true, JSON.stringify(key));
+		});
+	}
+});
+
+test("Esc and q still close the panel, and other keys do not", async () => {
+	for (const [key, expected] of [
+		["\u001b", true],
+		["q", true],
+		["x", false],
+		["\r", false],
+		["\u0004", false],
+		["Q", false],
+	]) {
+		await withFakeClock(async (setNow) => {
+			assert.equal(await closesOn(createHarness(), setNow, key), expected, JSON.stringify(key));
+		});
+	}
+});
+
+test("the panel also closes on the user's configured cancel binding", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		h.keybindings.matches = (data, id) => id === "tui.select.cancel" && data === "z";
+		assert.equal(await closesOn(h, setNow, "z"), true, "the remapped key cancels");
+	});
+	await withFakeClock(async (setNow) => {
+		assert.equal(await closesOn(createHarness(), setNow, "z"), false, "without a binding, z does nothing");
+	});
+});
+
+test("Ctrl+C in modifyOtherKeys and with the caps-lock bit also closes the panel", async () => {
+	for (const key of ["\u001b[27;5;99~", "\u001b[99;69u"]) {
+		await withFakeClock(async (setNow) => {
+			assert.equal(await closesOn(createHarness(), setNow, key), true, JSON.stringify(key));
+		});
+	}
+});
+
+test("Ctrl+Shift+C is not Ctrl+C and does not close the panel", async () => {
+	await withFakeClock(async (setNow) => {
+		assert.equal(await closesOn(createHarness(), setNow, "\u001b[99;6u"), false);
+	});
+});
+
+test("a keybindings manager that throws, answers a non-boolean or is missing never breaks the panel", async () => {
+	const hosts = {
+		throws: (h) => {
+			h.keybindings.matches = () => {
+				throw new Error("boom");
+			};
+			return h;
+		},
+		truthy: (h) => {
+			h.keybindings.matches = () => "yes";
+			return h;
+		},
+		missing: () => createHarness({ withKeybindings: false }),
+	};
+	for (const [name, make] of Object.entries(hosts)) {
+		for (const [key, expected] of [
+			["\u001b", true],
+			["q", true],
+			["\u0003", true],
+			["x", name === "truthy"],
+		]) {
+			await withFakeClock(async (setNow) => {
+				assert.equal(await closesOn(make(createHarness()), setNow, key), expected, `${name} ${JSON.stringify(key)}`);
+			});
+		}
+	}
+});
+
+test("the panel asks the host for the tui.select.cancel binding and nothing else", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		const ids = [];
+		h.keybindings.matches = (_data, id) => {
+			ids.push(id);
+			return false;
+		};
+		await closesOn(h, setNow, "x");
+		assert.deepEqual([...new Set(ids)], ["tui.select.cancel"]);
 	});
 });

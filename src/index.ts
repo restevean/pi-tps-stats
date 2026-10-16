@@ -469,7 +469,7 @@ export default function (pi: ExtensionAPI): void {
 
 	const openPanel = async (panelUi: ExtensionUIContext, snapshot: readonly ResponseSample[]): Promise<void> => {
 		await panelUi.custom<undefined>(
-			(tui, theme, _keybindings, done) => {
+			(tui, theme, keybindings, done) => {
 				// Same tokens as the Claude usage panel; a theme without them falls back to plain text.
 				const themed = typeof (theme as { fg?: unknown } | undefined)?.fg === "function";
 				const fg = (role: string) => (text: string) => (themed ? theme.fg(role as never, text) : text);
@@ -483,10 +483,21 @@ export default function (pi: ExtensionAPI): void {
 				// A short terminal gets shorter graphs so the centered panel still fits.
 				const rows = (tui as { terminal?: { rows?: number } }).terminal?.rows;
 				const graphHeight = typeof rows === "number" && rows < 27 ? 3 : undefined;
+				// The host's cancel binding; a host that does not pass its keybindings just has none.
+				const isBoundToCancel = (data: string): boolean => {
+					try {
+						return keybindings.matches(data, "tui.select.cancel");
+					} catch {
+						return false;
+					}
+				};
 				return {
 					render: (width) => renderStatsPanel(snapshot, width, style, graphHeight),
 					handleInput(data) {
-						if (matchesKey(data, Key.escape) || data === "q") done(undefined);
+						// Esc, q and Ctrl+C like Pi's own selectors, plus whatever the user bound to cancel.
+						const cancel =
+							matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c")) || data === "q" || isBoundToCancel(data);
+						if (cancel) done(undefined);
 					},
 					invalidate() {
 						// Stateless: render() always reads the snapshot.
