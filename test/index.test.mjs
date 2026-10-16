@@ -30,6 +30,7 @@ function createHarness({ mode = "tui", hasUI = true } = {}) {
 		view.widget = text?.map((line) => line.replace("\u001b[38;2;126;134;174m", "").replace("\u001b[39m", ""));
 	};
 	const tui = {
+		terminal: { rows: 60 },
 		requestRender() {
 			view.renderRequests += 1;
 			redraw();
@@ -90,6 +91,7 @@ function createHarness({ mode = "tui", hasUI = true } = {}) {
 	handlers.get("session_start")({ reason: "startup" }, ctx);
 
 	return {
+		tui,
 		handlers,
 		commands,
 		ctx,
@@ -1056,4 +1058,20 @@ test("the user-facing messages are labelled tps-stats", async () => {
 		h.view.notifications.map((entry) => entry.message),
 		["tps-stats: off", "tps-stats: widget", "No tps-stats metrics to reset"],
 	);
+});
+
+test("a short terminal shrinks the graphs so the centered panel still fits in 90% of the height", async () => {
+	await withFakeClock(async (setNow) => {
+		const heights = [];
+		for (const rows of [27, 28]) {
+			const h = createHarness();
+			h.tui.terminal.rows = rows;
+			await respond(h, setNow, 1000, 2000, { output: 100 });
+			const open = h.commands.get("tps").handler("stats", h.ctx);
+			heights.push(h.panels[0].component.render(80).length);
+			h.panels[0].component.handleInput("q");
+			await open;
+		}
+		assert.deepEqual(heights, [19, 25], "27 rows get 3-row graphs; 28 rows (25 / 0.9) get the full panel");
+	});
 });

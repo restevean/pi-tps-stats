@@ -182,6 +182,15 @@ export function renderStatsPanel(
 	const cw = summary.cacheWrite;
 	const cacheWriteLine = `${"cache write".padEnd(LABEL_WIDTH)}  avg ${percent(cw.avg)}  max ${percent(cw.max)}  min ${percent(cw.min)}`;
 
+	// Both graphs share one width, so one count: the text below and the bars always agree.
+	const area = Math.max(0, content - AXIS_WIDTH - RIGHT_MARGIN);
+	const { barWidth, shown } = fitBars(samples.length, area);
+	// The numbers cover the whole session; the bars only the newest responses that fit.
+	const scope =
+		shown < samples.length
+			? `Stats: whole session · bars: last ${String(shown)} of ${String(samples.length)}`
+			: "Stats and bars: whole session";
+
 	const graph = (
 		heading: string,
 		values: readonly number[],
@@ -190,11 +199,12 @@ export function renderStatsPanel(
 		range: Range,
 		format: (value: number) => string,
 	): string[] => {
-		const area = Math.max(0, content - AXIS_WIDTH - RIGHT_MARGIN);
-		const { barWidth, shown } = fitBars(values.length, area);
 		const rows = barChart(values.slice(-shown), scale, barWidth, graphHeight);
-		// The reference lines sit at the rows where the highest and the lowest value reach.
-		const refs = new Set([refRow(range.max, scale, graphHeight), refRow(range.min, scale, graphHeight)]);
+		// The reference lines sit at the rows where the session's highest and lowest value reach.
+		// A value above the axis (an old response that is no longer drawn) has no row, so no line.
+		const refs = new Set(
+			[range.max, range.min].filter((value) => value <= scale).map((value) => refRow(value, scale, graphHeight)),
+		);
 		const last = rows.length - 1;
 		return [
 			`${heading}  avg ${format(range.avg)}  ${REF_CHAR} max ${format(range.max)}  ${REF_CHAR} min ${format(range.min)}`,
@@ -205,14 +215,19 @@ export function renderStatsPanel(
 			}),
 		];
 	};
+	// The TPS axis follows the bars that are drawn, so they use the full height. The cache
+	// graph is a percentage, so its 0..100 axis stays fixed.
+	const visibleTpsMax = Math.max(0, ...samples.slice(-shown).map((sample) => sample.tps));
 	const bodyLines = [
 		"",
+		"",
+		scope,
 		"",
 		...graph(
 			"TPS (tok/s)",
 			samples.map((sample) => sample.tps),
-			summary.tps.max,
-			formatRate(summary.tps.max),
+			visibleTpsMax,
+			formatRate(visibleTpsMax),
 			summary.tps,
 			formatRate,
 		),

@@ -100,9 +100,9 @@ empty messages are skipped, and also left out of the `avg` on the widget line):
 - Two compact bar graphs with a value axis, one for TPS and one for cache read %,
   drawn oldest to newest. Each message is a bar two columns wide, one blank column apart, and the bars
   are six rows tall; when there are more messages than fit, only the newest are
-  drawn, and on a short terminal (under 26 rows) the graphs shrink to three rows. Each graph header carries
+  drawn, and on a short terminal (under 28 rows) the graphs shrink to three rows. Each graph header carries
   its average, then its maximum and minimum (there is no separate TPS summary row). Two blank rows separate the title
-  from the first graph.
+  from the first graph, followed by a scope line and one more blank row.
 - **Cache write %**: average, maximum and minimum (the same order as the graph
   headers) on a line below the cache read graph, after one blank row; it has no graph of its
   own.
@@ -110,6 +110,18 @@ empty messages are skipped, and also left out of the `avg` on the widget line):
   its minimum, with both values in the graph title. The lines and the bars stop four
   columns before the right border. When the two share a row (for example with a
   single message) only one line is drawn.
+
+**What the panel covers.** The numbers (`avg`, `max`, `min`, the reference lines and
+the cache write line) always cover the **whole session**. The bars show only the
+**newest responses that fit** the panel width, so the scope line under the title says
+so: `Stats: whole session · bars: last 16 of 200`, or `Stats and bars: whole session`
+when every response fits. The count in that text is the number of bars drawn.
+
+**Scale.** The TPS graph is scaled to the bars that are drawn: its axis top is the
+tallest visible bar, so they use the full height. The header still shows the session
+`max` and `min`; a dotted reference line is drawn only when its value falls inside the
+visible scale, so a record from an older response that is no longer drawn has no line.
+The cache read graph is a percentage and always spans 0 to 100.
 
 Minimum and maximum are per message. Averages are weighted: TPS is total output
 tokens over total generation time, and cache % is total cache tokens over total

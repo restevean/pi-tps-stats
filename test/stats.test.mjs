@@ -84,8 +84,12 @@ test("the graphs use two-column bars, one blank column apart, and six rows", () 
 	const baseline = lines.find((line) => line.includes("   0 │"));
 	const bars = baseline.split("   0 │")[1].replace(/ │$/, "").trimEnd();
 	assert.equal(bars, "██ ██ ██ ██ ██", "five responses: five 2-column bars separated by one column");
-	assert.equal(lines.length, 23, "frame + two blank + two graphs of six rows + blank + cache write row");
-	assert.equal(renderStatsPanel(samples, 80, undefined, 3).length, 17, "a short terminal can ask for three rows");
+	assert.equal(
+		lines.length,
+		25,
+		"frame + two blank + scope + blank + two graphs of six rows + blank + cache write row",
+	);
+	assert.equal(renderStatsPanel(samples, 80, undefined, 3).length, 19, "a short terminal can ask for three rows");
 });
 
 test("finds the row of a reference value, counting from the top", () => {
@@ -220,5 +224,130 @@ test("there is no TPS summary row: the panel opens with the TPS graph header", (
 	const blank = `│${" ".repeat(78)}│`;
 	assert.equal(lines[1], blank, "a blank row under the title");
 	assert.equal(lines[2], blank, "and a second one");
-	assert.ok(lines[3].includes("TPS (tok/s)  avg 40.0  ┄ max 100  ┄ min 25.0"), lines[3]);
+	assert.ok(lines[3].includes("Stats and bars: whole session"), "the scope line follows the two blank rows");
+	assert.equal(lines[4], blank, "one blank row below the scope line");
+	assert.ok(lines[5].includes("TPS (tok/s)  avg 40.0  ┄ max 100  ┄ min 25.0"), lines[5]);
+});
+
+const many = (count) =>
+	Array.from({ length: count }, (_, i) => ({
+		tps: 10 + (i % 5),
+		tokens: 10,
+		seconds: 1,
+		input: 100,
+		cacheRead: 100,
+		cacheWrite: 0,
+	}));
+
+// Number of two-column bars drawn on the baseline of the first graph.
+const drawnBars = (lines) => {
+	const baseline = lines.find((line) => line.includes("   0 │"));
+	const bars = baseline.split("   0 │")[1].replace(/ │$/, "").trimEnd();
+	return (bars.length + 1) / 3;
+};
+
+test("says the bars are the last n responses while the numbers are the whole session", () => {
+	const lines = renderStatsPanel(many(200), 60);
+	const scope = lines.find((line) => line.includes("Stats: whole session"));
+	assert.ok(scope, "a scope line exists");
+	assert.ok(scope.includes("Stats: whole session · bars: last 16 of 200"), scope);
+	assert.ok(lines[0].includes("200 responses"), "the title still counts the whole session");
+	assert.equal(drawnBars(lines), 16, "the number in the text is the number of bars actually drawn");
+});
+
+test("the scope line follows the width: more room, more bars, and the text says so", () => {
+	for (const width of [56, 80, 120]) {
+		const lines = renderStatsPanel(many(500), width);
+		const match = lines.join("\n").match(/bars: last (\d+) of 500/);
+		assert.ok(match, `${width}: scope line present`);
+		assert.equal(Number(match[1]), drawnBars(lines), `${width}: text and drawing agree`);
+		for (const line of lines) assert.equal(visibleWidth(line), width, `${width}: ${line}`);
+	}
+});
+
+test("when every response fits, the scope line says the stats and the bars cover the whole session", () => {
+	const text = renderStatsPanel(many(5), 80).join("\n");
+	assert.ok(text.includes("Stats and bars: whole session"), text);
+	assert.ok(!text.includes("bars: last"), "no 'last n' when nothing is cut");
+	const exact = renderStatsPanel(many(16), 60).join("\n");
+	assert.ok(exact.includes("Stats and bars: whole session"), "16 bars fit exactly at 60 columns");
+	assert.ok(renderStatsPanel(many(17), 60).join("\n").includes("bars: last 16 of 17"), "one more is cut");
+});
+
+test("the min, max and avg stay computed over the whole session, not over the drawn bars", () => {
+	const old = { tps: 500, tokens: 500, seconds: 1, input: 0, cacheRead: 0, cacheWrite: 0 };
+	const lines = renderStatsPanel([old, ...many(200)], 60);
+	assert.ok(lines.join("\n").includes("┄ max 500"), "the first response, no longer drawn, still sets the max");
+	assert.ok(lines.join("\n").includes("bars: last 16 of 201"));
+});
+
+const mk = (tps) => ({ tps, tokens: tps, seconds: 1, input: 100, cacheRead: 100, cacheWrite: 0 });
+
+// What follows the axis in a framed row: "│ label │bars │".
+const barsOf = (row) => row.split("│")[2];
+
+// The six bar rows that follow a graph header.
+const graphRows = (lines, heading, height = 6) => {
+	const start = lines.findIndex((line) => line.includes(heading));
+	return lines.slice(start + 1, start + 1 + height);
+};
+
+test("one blank row separates the scope line from the first graph header", () => {
+	for (const list of [many(5), many(200)]) {
+		const lines = renderStatsPanel(list, 60);
+		const scope = lines.findIndex((line) => line.includes("whole session"));
+		assert.equal(lines[scope + 1], `│${" ".repeat(58)}│`, "the row below the scope line is blank");
+		assert.ok(lines[scope + 2].includes("TPS (tok/s)"), "and the graph header comes right after");
+	}
+});
+
+test("the TPS graph is scaled to the bars that are drawn, not to the whole session", () => {
+	// One very fast response, then nineteen slow ones: at 56 columns only the last 14 are drawn.
+	const lines = renderStatsPanel([mk(200), ...Array.from({ length: 19 }, () => mk(20))], 56);
+	const text = lines.join("\n");
+	assert.ok(text.includes("bars: last 14 of 20"), text);
+	assert.ok(text.includes("avg 29.0  ┄ max 200  ┄ min 20.0"), "the header still reports the whole session");
+	const rows = graphRows(lines, "TPS (tok/s)");
+	assert.ok(rows[0].includes(" 20.0 │"), "the axis top is the tallest visible bar");
+	assert.ok(rows[5].includes("   0 │"));
+	assert.ok(!rows.some((row) => row.includes("200")), "the old record no longer sets the axis");
+	assert.ok(barsOf(rows[0]).includes("██"), "the visible bars reach the top row");
+	assert.ok(
+		rows.every((row) => barsOf(row).startsWith("██")),
+		"and fill every row",
+	);
+});
+
+test("a reference line that falls outside the visible scale is not drawn", () => {
+	const lines = renderStatsPanel([mk(200), ...Array.from({ length: 19 }, () => mk(20))], 56);
+	const rows = graphRows(lines, "TPS (tok/s)");
+	assert.ok(rows[0].includes("██┄██"), "the min line (20 = the visible top) runs through the top row");
+	assert.ok(
+		rows.slice(1).every((row) => !row.includes("┄")),
+		"no max line: 200 is outside the 0..20 scale",
+	);
+});
+
+test("when every response is drawn the scale is the session max, as before", () => {
+	const rows = graphRows(renderStatsPanel([mk(100), mk(25)], 80), "TPS (tok/s)");
+	assert.ok(rows[0].includes(" 100 │"));
+	assert.ok(rows[0].includes("██┄┄┄"), "the max line sits at the top, on the tallest bar");
+});
+
+test("the cache read graph keeps its fixed 0 to 100 axis even when bars are cut", () => {
+	const lines = renderStatsPanel(many(40), 56);
+	assert.ok(lines.join("\n").includes("bars: last 14 of 40"));
+	const rows = graphRows(lines, "cache read %");
+	assert.ok(rows[0].includes(" 100 │"), "a percentage axis does not rescale");
+	// 100 / (100 + 100) = 50%: the bars fill the lower half only.
+	assert.ok(!rows[2].includes("█"));
+	assert.ok(rows[3].includes("█"));
+});
+
+test("scaling to the visible bars survives an all-zero visible window", () => {
+	const lines = renderStatsPanel([mk(50), ...Array.from({ length: 19 }, () => mk(0))], 56);
+	for (const line of lines) assert.equal(visibleWidth(line), 56, line);
+	const rows = graphRows(lines, "TPS (tok/s)");
+	assert.ok(rows[0].includes(" 0.0 │"), "no division by zero: the axis top is 0.0");
+	assert.ok(barsOf(rows[5]).includes("▁"), "zero bars keep the smallest block");
 });

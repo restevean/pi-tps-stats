@@ -454,7 +454,7 @@ export default function (pi: ExtensionAPI): void {
 				};
 				// A short terminal gets shorter graphs so the centered panel still fits.
 				const rows = (tui as { terminal?: { rows?: number } }).terminal?.rows;
-				const graphHeight = typeof rows === "number" && rows < 26 ? 3 : undefined;
+				const graphHeight = typeof rows === "number" && rows < 28 ? 3 : undefined;
 				return {
 					render: (width) => renderStatsPanel(snapshot, width, style, graphHeight),
 					handleInput(data) {
