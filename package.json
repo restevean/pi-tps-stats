@@ -1,7 +1,7 @@
 {
 	"name": "pi-tps-stats",
 	"version": "0.1.1",
-	"description": "Live TPS and token usage display for the Pi coding agent (fork of pi-live-throughput)",
+	"description": "Live TPS and token usage display for the Pi coding agent",
 	"keywords": [
 		"pi-package",
 		"extension",
@@ -31,7 +31,7 @@
 		"verify": "pnpm run format:check && pnpm run check && pnpm run lint && pnpm run test"
 	},
 	"peerDependencies": {
-		"@earendil-works/pi-coding-agent": "^1.0.0",
+		"@earendil-works/pi-coding-agent": "*",
 		"@earendil-works/pi-tui": "*"
 	},
 	"devDependencies": {

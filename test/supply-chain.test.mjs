@@ -27,6 +27,23 @@ test("the package runs no code at install time and ships nothing but its sources
 	assert.deepEqual(pkg.files, ["src", "README.md", "LICENSE"]);
 });
 
+test("packages the host provides are peers with the any-version range, and never runtime dependencies", () => {
+	// The Pi package guide: the host supplies these, so they are declared with "*" and not bundled.
+	const hostProvided = [
+		"@earendil-works/pi-ai",
+		"@earendil-works/pi-agent-core",
+		"@earendil-works/pi-coding-agent",
+		"@earendil-works/pi-tui",
+		"typebox",
+	];
+	const peers = pkg.peerDependencies ?? {};
+	for (const name of hostProvided) {
+		if (name in peers) assert.equal(peers[name], "*", `${name} is a peer and must accept any host version`);
+		assert.equal(pkg.dependencies?.[name], undefined, `${name} must not be a runtime dependency`);
+	}
+	assert.ok("@earendil-works/pi-coding-agent" in peers, "the extension API comes from the host");
+});
+
 test("dependency build scripts have a single policy: deny", () => {
 	const workspace = read("pnpm-workspace.yaml");
 	assert.doesNotMatch(workspace, /^onlyBuiltDependencies:/m, "the legacy allow list contradicted allowBuilds");

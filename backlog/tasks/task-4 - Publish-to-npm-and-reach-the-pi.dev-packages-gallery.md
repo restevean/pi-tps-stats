@@ -4,7 +4,7 @@ title: Publish to npm and reach the pi.dev packages gallery
 status: To Do
 assignee: []
 created_date: '2026-10-16 19:19'
-updated_date: '2026-10-16 19:25'
+updated_date: '2026-10-16 23:01'
 labels:
   - npm
   - packaging
@@ -29,9 +29,9 @@ Blocked on a human action: as of 2026-10-16 `npm view pi-tps-stats` returns 404,
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The `description` in `package.json` no longer mentions `(fork of pi-live-throughput)`, since that string becomes the primary npm gallery text
-- [ ] #2 Every host-provided package declared in `peerDependencies` uses the documented `"*"` range, so a version-constrained range cannot fail installation when the host moves a major version
-- [ ] #3 The tarball from `npm pack --dry-run` contains only `src/**`, `README.md` and `LICENSE` in addition to the `package.json` npm always includes, defines no install-time lifecycle scripts, and `pnpm run verify` passes
+- [x] #1 The `description` in `package.json` no longer mentions `(fork of pi-live-throughput)`, since that string becomes the primary npm gallery text; the origin stays credited in the README and in `LICENSE`
+- [x] #2 Every host-provided package declared in `peerDependencies` uses the `"*"` range that the Pi package guide requires, pinned by a test in `test/supply-chain.test.mjs`
+- [x] #3 The tarball from `npm pack --dry-run` contains only `src/**`, `README.md` and `LICENSE` in addition to the `package.json` npm always includes, defines no install-time lifecycle scripts, and `pnpm run verify` passes
 - [ ] #4 The `restevean` npm account exists with a verified email and 2FA enabled
 - [ ] #5 `npm publish` succeeds for the released version and `npm view pi-tps-stats` resolves instead of returning 404
 - [ ] #6 The package appears in the pi.dev package gallery, `pi install npm:pi-tps-stats` works, and no extension warning reports a misdeclared host dependency
