@@ -1,19 +1,41 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 import throughputExtension from "../src/index.ts";
 
-function createHarness() {
+function createHarness({ mode = "tui", hasUI = true } = {}) {
 	const handlers = new Map();
 	const commands = new Map();
+	const widgets = new Map();
+	const widgetCalls = [];
+	let component;
+	const redraw = () => {
+		const content = typeof component?.render === "function" ? component.render(4096) : component;
+		view.rawWidget = content;
+		view.widget = content?.map((line) =>
+			line.replace("\u001b[38;2;126;134;174m", "").replace("\u001b[39m", ""),
+		);
+	};
+	const tui = { requestRender() { view.renderRequests += 1; redraw(); } };
 	const view = {
+		renderRequests: 0,
 		widget: undefined,
+		rawWidget: undefined,
+		widgetOptions: undefined,
 		status: undefined,
 		notifications: [],
 	};
 	const ui = {
-		setWidget(_key, content) {
-			view.widget = content;
+		setWidget(key, content, options) {
+			widgetCalls.push({ key, content, options });
+			widgets.delete(key);
+			if (content !== undefined) widgets.set(key, content);
+			if (key !== "throughput") return;
+			component?.dispose?.();
+			component = typeof content === "function" ? content(tui, {}) : content;
+			redraw();
+			view.widgetOptions = options;
 		},
 		setStatus(_key, content) {
 			view.status = content;
@@ -23,8 +45,9 @@ function createHarness() {
 		},
 	};
 	const ctx = {
+		mode,
 		ui,
-		hasUI: true,
+		hasUI,
 		model: { id: "configured-model" },
 	};
 	const pi = {
@@ -39,7 +62,7 @@ function createHarness() {
 	throughputExtension(pi);
 	handlers.get("session_start")({ reason: "startup" }, ctx);
 
-	return { handlers, commands, ctx, view };
+	return { handlers, commands, ctx, view, widgets, widgetCalls, renderAtWidth: (width) => component.render(width) };
 }
 
 function assistantMessage({
@@ -95,19 +118,180 @@ async function withFakeClock(run) {
 	}
 }
 
+test("updates a persistent widget without moving it relative to the YOLO banner", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		h.ctx.ui.setWidget("gentle:yolo", ["YOLO ON"]);
+		const order = [...h.widgets.keys()];
+		setNow(1400);
+		usageUpdate(h, 20);
+		setNow(2400);
+		usageUpdate(h, 40);
+		h.handlers.get("message_end")({ message: assistantMessage({ output: 40 }) }, h.ctx);
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		await h.commands.get("tps").handler("reset", h.ctx);
+		await h.commands.get("tps").handler("widget", h.ctx);
+		assert.equal(h.widgetCalls.filter((call) => call.key === "throughput" && call.content !== undefined).length, 1);
+		assert.deepEqual([...h.widgets.keys()], order);
+		assert.deepEqual(h.widgets.get("gentle:yolo"), ["YOLO ON"]);
+		assert.equal(h.widgetCalls.filter((call) => call.key === "gentle:yolo").length, 1);
+		assert.ok(h.view.renderRequests > 0);
+		assert.match(h.view.widget[0], /^TPS /);
+	});
+});
+
+test("removes only its own persistent widget when switching to the footer or shutting down", async () => {
+	const h = createHarness();
+	h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+	h.ctx.ui.setWidget("gentle:yolo", ["YOLO ON"]);
+	await h.commands.get("tps").handler("status", h.ctx);
+	assert.equal(h.view.widget, undefined);
+	assert.match(h.view.status, /^TPS .* tok\/s\./);
+	await h.commands.get("tps").handler("widget", h.ctx);
+	assert.match(h.view.widget[0], /^TPS /);
+	assert.equal(h.view.status, undefined);
+	h.handlers.get("session_shutdown")({}, h.ctx);
+	assert.deepEqual([...h.widgets.keys()], ["gentle:yolo"]);
+	assert.equal(h.view.widget, undefined);
+	assert.equal(h.view.status, undefined);
+});
+
+test("preserves the string-array widget path in RPC mode", () => {
+	const h = createHarness({ mode: "rpc" });
+	h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+	assert.ok(Array.isArray(h.widgetCalls.at(-1).content));
+	assert.match(h.view.widget[0], /^TPS /);
+});
+
+test("keeps the persistent widget on one width-safe line without registering again", () => {
+	const h = createHarness();
+	h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+	const calls = h.widgetCalls.length;
+	for (const width of [0, 1, 20, 80, 160]) {
+		const lines = h.renderAtWidth(width);
+		assert.equal(lines.length, 1);
+		assert.ok(visibleWidth(lines[0]) <= width);
+	}
+	assert.equal(h.widgetCalls.length, calls);
+});
+
+test("creates a new component after session shutdown without retaining old UI callbacks", () => {
+	const h = createHarness();
+	h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+	h.handlers.get("session_shutdown")({}, h.ctx);
+	const renders = h.view.renderRequests;
+	h.handlers.get("session_start")({}, h.ctx);
+	h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+	assert.match(h.view.widget[0], /^TPS /);
+	assert.equal(h.widgetCalls.filter((call) => typeof call.content === "function").length, 2);
+	assert.equal(h.view.renderRequests, renders, "the second session mounts instead of repainting a disposed component");
+});
+
+test("does not create a terminal component without a UI", () => {
+	const h = createHarness({ mode: "print", hasUI: false });
+	h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+	assert.equal(h.widgetCalls.length, 0);
+	assert.equal(h.view.widget, undefined);
+});
+
+test("places the default widget below the prompt editor", () => {
+	const { handlers, ctx, view } = createHarness();
+	handlers.get("message_start")({ message: assistantMessage() }, ctx);
+	assert.deepEqual(view.widgetOptions, { placement: "belowEditor" });
+	assert.equal(view.status, undefined);
+});
+
+test("uses the dedicated #7E86AE foreground and resets it after the widget", () => {
+	const { handlers, ctx, view } = createHarness();
+	handlers.get("message_start")({ message: assistantMessage() }, ctx);
+	assert.ok(view.rawWidget[0].startsWith("\u001b[38;2;126;134;174m"));
+	assert.ok(view.rawWidget[0].endsWith("\u001b[39m"));
+});
+
+test("matches the screenshot field order, full counts, and final response usage", async () => {
+	await withFakeClock(async (setNow) => {
+		const { handlers, ctx, view } = createHarness();
+		handlers.get("message_start")({ message: assistantMessage() }, ctx);
+		setNow(3900);
+		handlers.get("message_end")(
+			{ message: assistantMessage({ output: 33, input: 2, cacheRead: 0, cacheWrite: 85571 }) },
+			ctx,
+		);
+		assert.deepEqual(view.widget, [
+			"TPS 11.4 tok/s. out 33, in 2, cache 0/85,571, cache % 0.0%/100.0%, total 85,606, 2.9s",
+		]);
+	});
+});
+
+test("updates all screenshot fields during streaming without changing the footer", async () => {
+	await withFakeClock(async (setNow) => {
+		const { handlers, commands, ctx, view } = createHarness();
+		handlers.get("message_start")({ message: assistantMessage() }, ctx);
+		const sendUsage = (output) => handlers.get("message_update")(
+			{
+				message: assistantMessage({ output, input: 2, cacheRead: 0, cacheWrite: 85571 }),
+				assistantMessageEvent: { type: "text_end", content: "" },
+			},
+			ctx,
+		);
+		setNow(1400);
+		sendUsage(33);
+		setNow(2400);
+		sendUsage(43);
+		assert.deepEqual(view.widget, [
+			"TPS 10.0 tok/s. out 43, in 2, cache 0/85,571, cache % 0.0%/100.0%, total 85,616, 1.0s",
+		]);
+		assert.deepEqual(view.widgetOptions, { placement: "belowEditor" });
+		assert.equal(view.status, undefined);
+		await commands.get("tps").handler("off", ctx);
+		assert.equal(view.widget, undefined);
+		await commands.get("tps").handler("on", ctx);
+		assert.deepEqual(view.widgetOptions, { placement: "belowEditor" });
+		assert.ok(view.rawWidget[0].startsWith("\u001b[38;2;126;134;174m"));
+	});
+});
+
+test("shows cache read/write percentages of prompt tokens next to their counts", async () => {
+	await withFakeClock(async (setNow) => {
+		const { handlers, ctx, view } = createHarness();
+		handlers.get("message_start")({ message: assistantMessage() }, ctx);
+		setNow(2000);
+		handlers.get("message_end")(
+			{ message: assistantMessage({ output: 1000, input: 100, cacheRead: 800, cacheWrite: 100 }) },
+			ctx,
+		);
+		assert.deepEqual(view.widget, [
+			"TPS 1000 tok/s. out 1,000, in 100, cache 800/100, cache % 80.0%/10.0%, total 2,000, 1.0s",
+		]);
+		assert.deepEqual(view.widgetOptions, { placement: "belowEditor" });
+		assert.ok(view.rawWidget[0].startsWith("\u001b[38;2;126;134;174m"));
+		assert.ok(view.rawWidget[0].endsWith("\u001b[39m"));
+		assert.equal(view.status, undefined);
+	});
+});
+
+test("renders zero cache percentages when there are no prompt tokens", () => {
+	const { handlers, ctx, view } = createHarness();
+	handlers.get("message_start")({ message: assistantMessage() }, ctx);
+	assert.deepEqual(view.widget, [
+		"TPS ~0.0 tok/s. out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
+	]);
+});
+
 test("starts the measurement window only after a second output token", async () => {
 	await withFakeClock(async (setNow) => {
 		const harness = createHarness();
 		const { handlers, ctx, view } = harness;
 
 		handlers.get("message_start")({ message: assistantMessage() }, ctx);
-		assert.deepEqual(view.widget, ["⚡ est. 0.0 tok/s · avg 0.0 tok/s · ~0 tok · 0.0s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS ~0.0 tok/s. out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s"]);
 
 		setNow(1200);
 		update(harness, "x".repeat(4));
 		assert.deepEqual(
 			view.widget,
-			["⚡ est. 0.0 tok/s · avg 0.0 tok/s · ~1 tok · 0.0s · test-model"],
+			["TPS ~0.0 tok/s. out ~1, in 0, cache 0/0, cache % 0.0%/0.0%, total ~1, 0.0s"],
 			"a single output token does not start the measurement clock",
 		);
 
@@ -115,7 +299,7 @@ test("starts the measurement window only after a second output token", async () 
 		update(harness, "x".repeat(4));
 		assert.deepEqual(
 			view.widget,
-			["⚡ est. 0.0 tok/s · avg 0.0 tok/s · ~2 tok · 0.0s · test-model"],
+			["TPS ~0.0 tok/s. out ~2, in 0, cache 0/0, cache % 0.0%/0.0%, total ~2, 0.0s"],
 			"the second output token starts a zero-length window",
 		);
 
@@ -123,7 +307,7 @@ test("starts the measurement window only after a second output token", async () 
 		update(harness, "x".repeat(40));
 		assert.deepEqual(
 			view.widget,
-			["⚡ est. 50.0 tok/s · avg 50.0 tok/s · ~12 tok · 0.2s · test-model"],
+			["TPS ~50.0 tok/s. out ~12, in 0, cache 0/0, cache % 0.0%/0.0%, total ~12, 0.2s"],
 			"only tokens observed after the second token contribute to the rate",
 		);
 	});
@@ -140,7 +324,7 @@ test("falls back to whole-response timing when no second token is observed", asy
 		update(harness, "xxxx");
 		assert.deepEqual(
 			view.widget,
-			["⚡ est. 0.0 tok/s · avg 0.0 tok/s · ~1 tok · 0.0s · test-model"],
+			["TPS ~0.0 tok/s. out ~1, in 0, cache 0/0, cache % 0.0%/0.0%, total ~1, 0.0s"],
 			"the measurement window stays closed after a single token",
 		);
 
@@ -148,7 +332,7 @@ test("falls back to whole-response timing when no second token is observed", asy
 		handlers.get("message_end")({ message: assistantMessage({ output: 2 }) }, ctx);
 		assert.deepEqual(
 			view.widget,
-			["✓ 2 tok in 0.5s · 4.0 tok/s avg · peak 4.0 tok/s · test-model"],
+			["TPS 4.0 tok/s. out 2, in 0, cache 0/0, cache % 0.0%/0.0%, total 2, 0.5s"],
 			"the final summary uses whole-response timing when the window never opened",
 		);
 	});
@@ -165,13 +349,13 @@ test("falls back to whole-response timing when the provider total does not excee
 		update(harness, "Hello");
 		setNow(1400);
 		update(harness, " world");
-		assert.deepEqual(view.widget, ["⚡ est. 0.0 tok/s · avg 0.0 tok/s · ~3 tok · 0.0s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS ~0.0 tok/s. out ~3, in 0, cache 0/0, cache % 0.0%/0.0%, total ~3, 0.0s"]);
 
 		setNow(1500);
 		handlers.get("message_end")({ message: assistantMessage({ output: 2 }) }, ctx);
 		assert.deepEqual(
 			view.widget,
-			["✓ 2 tok in 0.5s · 4.0 tok/s avg · peak 4.0 tok/s · test-model"],
+			["TPS 4.0 tok/s. out 2, in 0, cache 0/0, cache % 0.0%/0.0%, total 2, 0.5s"],
 			"a clamped measured numerator falls back instead of reporting 0.0 tok/s",
 		);
 	});
@@ -190,7 +374,7 @@ test("falls back to whole-response timing when streamed provider usage ends at t
 		usageUpdate(harness, 2);
 		setNow(1500);
 		handlers.get("message_end")({ message: assistantMessage({ output: 2 }) }, ctx);
-		assert.deepEqual(view.widget, ["✓ 2 tok in 0.5s · 4.0 tok/s avg · peak 4.0 tok/s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS 4.0 tok/s. out 2, in 0, cache 0/0, cache % 0.0%/0.0%, total 2, 0.5s"]);
 	});
 });
 
@@ -201,7 +385,7 @@ test("keeps a stable final summary through display-mode changes", async () => {
 		const message = assistantMessage();
 
 		handlers.get("message_start")({ message }, ctx);
-		assert.deepEqual(view.widget, ["⚡ est. 0.0 tok/s · avg 0.0 tok/s · ~0 tok · 0.0s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS ~0.0 tok/s. out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s"]);
 
 		setNow(1200);
 		update(harness, "x".repeat(4));
@@ -211,25 +395,25 @@ test("keeps a stable final summary through display-mode changes", async () => {
 
 		setNow(2000);
 		handlers.get("message_end")({ message: assistantMessage({ output: 300 }) }, ctx);
-		const finalWidget = "✓ 300 tok in 0.6s · 497 tok/s avg · peak 497 tok/s · test-model";
+		const finalWidget = "TPS 497 tok/s. out 300, in 0, cache 0/0, cache % 0.0%/0.0%, total 300, 0.6s";
 		assert.deepEqual(view.widget, [finalWidget]);
 
 		setNow(10_000);
-		await commands.get("throughput").handler("status", ctx);
+		await commands.get("tps").handler("status", ctx);
 		assert.equal(view.widget, undefined);
-		assert.equal(view.status, "✓ 300 tok · 497 tok/s");
+		assert.equal(view.status, finalWidget);
 
-		await commands.get("throughput").handler("off", ctx);
+		await commands.get("tps").handler("off", ctx);
 		assert.equal(view.status, undefined);
-		await commands.get("throughput").handler("", ctx);
-		assert.equal(view.status, "✓ 300 tok · 497 tok/s", "toggle restores the selected status mode");
+		await commands.get("tps").handler("", ctx);
+		assert.equal(view.status, finalWidget, "toggle restores the selected status mode");
 
-		await commands.get("throughput").handler("widget", ctx);
+		await commands.get("tps").handler("widget", ctx);
 		assert.deepEqual(view.widget, [finalWidget], "final values do not decay while idle");
 
-		await commands.get("throughput").handler("reset", ctx);
+		await commands.get("tps").handler("reset", ctx);
 		assert.equal(view.widget, undefined, "reset clears an idle final summary");
-		await commands.get("throughput").handler("reset", ctx);
+		await commands.get("tps").handler("reset", ctx);
 		assert.equal(view.widget, undefined, "idle reset does not create a phantom stream");
 		assert.equal(view.notifications.at(-1).message, "No throughput metrics to reset");
 	});
@@ -244,23 +428,23 @@ test("switches from estimated deltas to cumulative provider usage", async () => 
 
 		setNow(1200);
 		update(harness, "x".repeat(4));
-		assert.deepEqual(view.widget, ["⚡ est. 0.0 tok/s · avg 0.0 tok/s · ~1 tok · 0.0s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS ~0.0 tok/s. out ~1, in 0, cache 0/0, cache % 0.0%/0.0%, total ~1, 0.0s"]);
 
 		setNow(1400);
 		update(harness, "x".repeat(4));
-		assert.deepEqual(view.widget, ["⚡ est. 0.0 tok/s · avg 0.0 tok/s · ~2 tok · 0.0s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS ~0.0 tok/s. out ~2, in 0, cache 0/0, cache % 0.0%/0.0%, total ~2, 0.0s"]);
 
 		setNow(1600);
 		update(harness, "x".repeat(4), "text_delta", 50);
 		assert.deepEqual(
 			view.widget,
-			["⚡ 250 tok/s · avg 250 tok/s · 50 tok · 0.2s · test-model"],
+			["TPS 250 tok/s. out 50, in 0, cache 0/0, cache % 0.0%/0.0%, total 50, 0.2s"],
 			"the first advancing provider report replaces the heuristic and its rolling samples",
 		);
 
 		setNow(1800);
 		update(harness, "x".repeat(4), "thinking_delta", 90);
-		assert.deepEqual(view.widget, ["⚡ 225 tok/s · avg 225 tok/s · 90 tok · 0.4s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS 225 tok/s. out 90, in 0, cache 0/0, cache % 0.0%/0.0%, total 90, 0.4s"]);
 	});
 });
 
@@ -273,103 +457,39 @@ test("observes provider usage on updates without content deltas", async () => {
 
 		setNow(1100);
 		usageUpdate(harness, 20);
-		assert.deepEqual(view.widget, ["⚡ 0.0 tok/s · avg 0.0 tok/s · 20 tok · 0.0s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS 0.0 tok/s. out 20, in 0, cache 0/0, cache % 0.0%/0.0%, total 20, 0.0s"]);
 
 		setNow(1150);
 		usageUpdate(harness, 30, "toolcall_end");
 		assert.deepEqual(
 			view.widget,
-			["⚡ 200 tok/s · avg 200 tok/s · 30 tok · 0.1s · test-model"],
+			["TPS 200 tok/s. out 30, in 0, cache 0/0, cache % 0.0%/0.0%, total 30, 0.1s"],
 			"usage-only events render even inside the normal delta update interval",
 		);
 
 		setNow(2000);
 		handlers.get("message_end")({ message: assistantMessage({ output: 80 }) }, ctx);
-		assert.deepEqual(view.widget, ["✓ 80 tok in 0.9s · 66.7 tok/s avg · peak 200 tok/s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS 66.7 tok/s. out 80, in 0, cache 0/0, cache % 0.0%/0.0%, total 80, 0.9s"]);
 	});
 });
 
-test("reports cached prompt metrics and excludes cache reads from approximate processing", async () => {
+test("status mode shows the same text as the configured widget, live and final", async () => {
 	await withFakeClock(async (setNow) => {
-		const harness = createHarness();
-		const { handlers, ctx, view } = harness;
-
-		providerRequest(harness);
-		setNow(1100);
-		handlers.get("message_start")({ message: assistantMessage() }, ctx);
-		setNow(1300);
-		update(harness, "first output");
+		const h = createHarness();
+		await h.commands.get("tps").handler("status", h.ctx);
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		assert.equal(h.view.status, "TPS ~0.0 tok/s. out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s");
 		setNow(2000);
-		handlers.get("message_end")(
-			{ message: assistantMessage({ input: 200, output: 50, cacheRead: 800, cacheWrite: 100 }) },
-			ctx,
+		h.handlers.get("message_end")(
+			{ message: assistantMessage({ output: 1000, input: 100, cacheRead: 800, cacheWrite: 100 }) },
+			h.ctx,
 		);
-
-		assert.deepEqual(view.widget, [
-			"✓ 50 tok in 0.7s · 67.1 tok/s avg · peak 67.1 tok/s · input 200 tok · cache read 800 tok · cache write 100 tok · TTFT 300ms · approx. prompt 1000 tok/s · test-model",
-		]);
-		assert.doesNotMatch(
-			view.widget[0],
-			/approx\. prompt 3\.7k tok\/s/,
-			"cache reads are not treated as processed tokens",
-		);
-	});
-});
-
-test("reports uncached input and request-boundary TTFT without cache placeholders", async () => {
-	await withFakeClock(async (setNow) => {
-		const harness = createHarness();
-		const { handlers, ctx, view } = harness;
-
-		providerRequest(harness);
-		setNow(1200);
-		handlers.get("message_start")({ message: assistantMessage() }, ctx);
-		setNow(1500);
-		update(harness, "first output");
-		setNow(2000);
-		handlers.get("message_end")({ message: assistantMessage({ input: 600, output: 40 }) }, ctx);
-
-		assert.match(view.widget[0], /input 600 tok · TTFT 500ms · approx\. prompt 1200 tok\/s/);
-		assert.doesNotMatch(view.widget[0], /cache (read|write)/);
-	});
-});
-
-test("omits unavailable and partially reported prompt metrics cleanly", async () => {
-	await withFakeClock(async (setNow) => {
-		const partial = createHarness();
-		partial.handlers.get("message_start")({ message: assistantMessage() }, partial.ctx);
-		setNow(1500);
-		partial.handlers.get("message_end")({ message: assistantMessage({ input: 250, output: 10 }) }, partial.ctx);
-		assert.match(partial.view.widget[0], /input 250 tok/);
-		assert.doesNotMatch(partial.view.widget[0], /cache|TTFT|approx\. prompt/);
-
-		setNow(2000);
-		const unavailable = createHarness();
-		providerRequest(unavailable);
-		setNow(2200);
-		unavailable.handlers.get("message_start")({ message: assistantMessage() }, unavailable.ctx);
-		setNow(2400);
-		update(unavailable, "first output");
-		setNow(3000);
-		unavailable.handlers.get("message_end")({ message: assistantMessage({ output: 10 }) }, unavailable.ctx);
-		assert.match(unavailable.view.widget[0], /TTFT 400ms/);
-		assert.doesNotMatch(unavailable.view.widget[0], /input|cache|approx\. prompt/);
-	});
-});
-
-test("omits TTFT and approximate prompt rate when no output arrives", async () => {
-	await withFakeClock(async (setNow) => {
-		const harness = createHarness();
-		const { handlers, ctx, view } = harness;
-
-		providerRequest(harness);
-		setNow(1100);
-		handlers.get("message_start")({ message: assistantMessage() }, ctx);
-		setNow(2000);
-		handlers.get("message_end")({ message: assistantMessage({ input: 300 }) }, ctx);
-
-		assert.match(view.widget[0], /input 300 tok/);
-		assert.doesNotMatch(view.widget[0], /TTFT|approx\. prompt/);
+		const expected = "TPS 1000 tok/s. out 1,000, in 100, cache 800/100, cache % 80.0%/10.0%, total 2,000, 1.0s";
+		assert.equal(h.view.status, expected);
+		assert.equal(h.view.widget, undefined, "status mode does not also register the widget");
+		await h.commands.get("tps").handler("widget", h.ctx);
+		assert.equal(h.view.status, undefined);
+		assert.deepEqual(h.view.widget, [expected], "both modes render identical text");
 	});
 });
 
@@ -388,19 +508,19 @@ test("ignores empty deltas and resets only the active measurement window", async
 
 		setNow(5200);
 		update(harness, "x".repeat(400), "toolcall_delta");
-		assert.deepEqual(view.widget, ["⚡ est. 0.0 tok/s · avg 0.0 tok/s · ~100 tok · 0.0s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS ~0.0 tok/s. out ~100, in 0, cache 0/0, cache % 0.0%/0.0%, total ~100, 0.0s"]);
 
 		setNow(5300);
-		await commands.get("throughput").handler("reset", ctx);
-		assert.deepEqual(view.widget, ["⚡ est. 0.0 tok/s · avg 0.0 tok/s · ~0 tok · 0.0s · test-model"]);
+		await commands.get("tps").handler("reset", ctx);
+		assert.deepEqual(view.widget, ["TPS ~0.0 tok/s. out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s"]);
 
 		setNow(5500);
 		update(harness, "x".repeat(400));
-		assert.deepEqual(view.widget, ["⚡ est. 500 tok/s · avg 500 tok/s · ~100 tok · 0.2s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS ~500 tok/s. out ~100, in 0, cache 0/0, cache % 0.0%/0.0%, total ~100, 0.2s"]);
 
 		setNow(6000);
 		handlers.get("message_end")({ message: assistantMessage({ output: 500 }) }, ctx);
-		assert.deepEqual(view.widget, ["✓ 500 tok in 0.7s · 571 tok/s avg · peak 571 tok/s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS 571 tok/s. out 500, in 0, cache 0/0, cache % 0.0%/0.0%, total 500, 0.7s"]);
 
 		handlers.get("session_shutdown")({ reason: "quit" }, ctx);
 		assert.equal(view.widget, undefined);
@@ -416,12 +536,12 @@ test("streaming reset excludes earlier reported tokens from final average and pe
 		setNow(1500);
 		usageUpdate(harness, 100);
 		setNow(2000);
-		await commands.get("throughput").handler("reset", ctx);
+		await commands.get("tps").handler("reset", ctx);
 		setNow(3000);
 		usageUpdate(harness, 200);
-		assert.deepEqual(view.widget, ["⚡ 100 tok/s · avg 100 tok/s · 100 tok · 1.0s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS 100 tok/s. out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s"]);
 		handlers.get("message_end")({ message: assistantMessage({ output: 200 }) }, ctx);
-		assert.deepEqual(view.widget, ["✓ 200 tok in 1.0s · 100 tok/s avg · peak 100 tok/s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS 100 tok/s. out 200, in 0, cache 0/0, cache % 0.0%/0.0%, total 200, 1.0s"]);
 	});
 });
 
@@ -433,10 +553,10 @@ test("streaming reset with no later output does not fall back to pre-reset token
 		setNow(1500);
 		usageUpdate(harness, 100);
 		setNow(2000);
-		await commands.get("throughput").handler("reset", ctx);
+		await commands.get("tps").handler("reset", ctx);
 		setNow(3000);
 		handlers.get("message_end")({ message: assistantMessage({ output: 100 }) }, ctx);
-		assert.deepEqual(view.widget, ["✓ 100 tok in 1.0s · 0.0 tok/s avg · peak 0.0 tok/s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS 0.0 tok/s. out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s"]);
 	});
 });
 
@@ -448,15 +568,15 @@ test("repeated resets before provider usage preserve the estimated pre-reset bas
 		setNow(1500);
 		update(harness, "x".repeat(400));
 		setNow(2000);
-		await commands.get("throughput").handler("reset", ctx);
+		await commands.get("tps").handler("reset", ctx);
 		setNow(2500);
 		update(harness, "x".repeat(200));
 		setNow(3000);
-		await commands.get("throughput").handler("reset", ctx);
+		await commands.get("tps").handler("reset", ctx);
 		setNow(4000);
 		usageUpdate(harness, 250);
-		assert.deepEqual(view.widget, ["⚡ 100 tok/s · avg 100 tok/s · 100 tok · 1.0s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS 100 tok/s. out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s"]);
 		handlers.get("message_end")({ message: assistantMessage({ output: 250 }) }, ctx);
-		assert.deepEqual(view.widget, ["✓ 250 tok in 1.0s · 100 tok/s avg · peak 100 tok/s · test-model"]);
+		assert.deepEqual(view.widget, ["TPS 100 tok/s. out 250, in 0, cache 0/0, cache % 0.0%/0.0%, total 250, 1.0s"]);
 	});
 });

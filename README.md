@@ -1,35 +1,67 @@
-# pi-live-throughput
+# pi-tps-stats
 
-A single-line live tokens/sec display for the [Pi coding agent](https://pi.dev).
+> **Based on a fork of
+> [pi-live-throughput](https://github.com/apetersson/pi-live-throughput)** by
+> Andreas Petersson (MIT), forked from version 0.3.0
+> (`dcedab3 chore(release): 0.3.0`). This project is independent and is not
+> affiliated with or endorsed by the original author.
 
-Requires pi 1.x. Validated against pi 1.0.0.
 
-While an assistant response streams, the extension shows its rolling throughput,
-average throughput, estimated output tokens, elapsed time, and model:
+A single-line live tokens/sec display below the prompt editor for the
+[Pi coding agent](https://pi.dev).
+
+Requires pi 1.x. The widget uses a dedicated `#7E86AE` foreground color without
+changing the active theme or the rest of the UI.
+
+In terminal mode, the widget is registered once per visible lifetime. Streaming
+updates, subsequent responses, and active measurement resets repaint that same
+component instead of registering it again. Long lines are truncated to the
+terminal width, keeping the widget on one row. Switching to status mode, hiding
+the display, or ending the session removes only this extension's widget.
+
+This prevents throughput updates from moving the widget relative to other
+widgets. TPS uses the below-editor area, separate from the above-editor YOLO
+banner. This placement is a visual trial, not a verified fix for duplicated
+YOLO rendering; other extensions still control their own widgets.
+The extension never modifies YOLO state, its banner, or Gentle Shell. RPC mode
+keeps the existing string-array widget path because custom terminal components
+are not supported there.
+
+While an assistant response streams, the widget shows these fields in order:
+**TPS → output → input → cache read/write → cache read/write % → total → duration**. When streaming
+finishes, the final summary remains visible until the next response starts:
 
 ```text
-⚡ 92.3 tok/s · avg 84.5 tok/s · 1.2k tok · 14.2s · deepseek-v4-flash
+TPS 11.4 tok/s. out 33, in 2, cache 0/85,571, cache % 0.0%/100.0%, total 85,606, 2.9s
 ```
 
-When streaming finishes, it replaces the live metrics with a final summary that
-stays visible until the next assistant response starts. Prompt fields are added
-when Pi exposes usable normalized values:
+Counts use full integers with English thousands separators. `total` is the sum
+of output, input, cache-read, and cache-write tokens for the current response,
+not the session. Both modes always show all fields; a zero input/cache field
+reflects Pi's normalized usage and does not prove the provider reported a zero.
 
-```text
-✓ 512 tok in 2.0s · 256 tok/s avg · peak 319 tok/s · input 1.2k tok · cache read 8.0k tok · TTFT 420ms · approx. prompt 2900 tok/s · deepseek-v4-flash
-```
+`cache %` immediately follows the cache counts. Each percentage uses
+`input + cacheRead + cacheWrite` as its denominator, excluding output, and is
+rounded to one decimal place. For example, input 100, cache read 800, and cache
+write 100 produces `80.0%/10.0%`. With no prompt tokens it shows `0.0%/0.0%`.
 
-Live figures use Pi's cumulative provider-reported `usage.output` value when it
-advances during streaming. Providers that expose usage only after completion
-fall back to text, thinking, and tool-call delta estimates, identified by
-`est.` rates and `~` token counts. The final token count always uses the
-provider-reported value.
+Live TPS is the rolling throughput; final TPS is the average over the measured
+generation window. Live figures use Pi's cumulative provider-reported
+`usage.output` when it advances. Otherwise text, thinking, and tool-call deltas
+provide estimates, identified by `~` before TPS, output, and total. Final counts
+always use provider-reported usage. Input/cache fields update when Pi exposes
+them, which may be only at completion.
+
+`/tps status` publishes exactly the same line through Pi's status API
+instead of a widget. The host decides where a status appears: Gentle Shell shows
+it in the side panel under Status → Integrations, not below the input, and
+applies its own status color, so `#7E86AE` only applies to the widget.
 
 ## Measurement window
 
 Live and final throughput rates start measuring only after a second output
 token has been observed. Keeping time-to-first-token out of the measurement
-window means the rolling, average, and peak rates describe decoding speed
+window means the rolling and final average rates describe decoding speed
 rather than prompt processing, provider queueing, or network latency. Only
 tokens observed after measurement starts contribute to a rate; the token
 counters still report the response's cumulative output.
@@ -41,48 +73,30 @@ provider usage is cumulative, switching from the heuristic estimate to
 provider-reported usage adopts the provider's count for the response so far,
 which can include the few tokens observed just before the window opened.
 
-The duration shown next to the final rate is the measured generation window, so
-TTFT is reported separately and is never folded into the rate.
+The duration at the end of the line is the measured generation window, not
+necessarily the whole response time.
 
 ## Prompt and cache metrics
 
 Pi normalizes prompt usage into separate `input`, `cacheRead`, and `cacheWrite`
 counts. `input` is the uncached, non-cache-write portion; cache-read tokens are
 shown separately and are never described as tokens processed by the model.
-Because Pi initializes unavailable usage fields to zero, this extension reports
-only positive prompt/cache counts rather than presenting a zero as confirmed
-provider data.
-
-TTFT (time to first output) is measured from Pi's `before_provider_request`
-boundary to the first substantive text, thinking, or tool-call output event. It
-is omitted if either boundary is unavailable. TTFT is an end-to-end observation:
-it can include network latency, provider queueing and routing, cache lookup, and
-model startup, not just model prefill.
-
-`approx. prompt` is a best-effort estimate calculated as
-`(input + cacheWrite) / TTFT`. It is shown only when both a positive processed
-prompt-token count and a positive TTFT are available. Cache-read tokens are
-excluded. The estimate is not true model prefill throughput because its timing
-contains the end-to-end latency above.
+Because Pi initializes unavailable usage fields to zero, a zero shows as `0`
+rather than as confirmed provider data. Time to first token (TTFT) and the
+approximate prompt rate are no longer displayed.
 
 ## Install
 
-Install from npm:
+Install directly from GitHub:
 
 ```bash
-pi install npm:pi-live-throughput
+pi install git:github.com/restevean/pi-tps-stats
 ```
 
-Alternatively, install directly from GitHub:
+Or install a local checkout:
 
 ```bash
-pi install git:github.com/apetersson/pi-live-throughput
-```
-
-For local development, install the checkout instead:
-
-```bash
-pi install /absolute/path/to/pi-live-throughput
+pi install /absolute/path/to/pi-tps-stats
 ```
 
 Use `/reload` if Pi was already running when you installed or changed the
@@ -90,16 +104,18 @@ extension.
 
 ## Commands
 
-The widget is enabled above the editor by default.
+The persistent `#7E86AE` widget is enabled below the prompt editor by default.
+After reloading the local extension, use `/tps widget` to try it, or
+`/tps status` to publish the same text as a status instead.
 
 | Command              | Effect                                                 |
 | -------------------- | ------------------------------------------------------ |
-| `/throughput`        | Toggle the display on or off                           |
-| `/throughput on`     | Enable the previously selected display mode            |
-| `/throughput off`    | Hide the display                                       |
-| `/throughput widget` | Enable the full single-line widget above the editor    |
-| `/throughput status` | Enable a compact footer status instead                 |
-| `/throughput reset`  | Reset an active measurement or clear the final summary |
+| `/tps`               | Toggle the display on or off                           |
+| `/tps on`            | Enable the previously selected display mode            |
+| `/tps off`           | Hide the display                                       |
+| `/tps widget`        | Enable the persistent widget below the editor          |
+| `/tps status`        | Publish the same line as a host status instead         |
+| `/tps reset`         | Reset an active measurement or clear the final summary |
 
 ## Development
 
@@ -117,14 +133,33 @@ Apply formatting with `pnpm run format`. Run individual checks with
 To load the local extension without installing it:
 
 ```bash
-pi -e ./src/index.ts
+cd /path/to/pi-tps-stats
+gentle-shell -e ./src/index.ts
 ```
+
+This loads the local source for one invocation without adding it to your
+permanent package configuration. Use `pi` instead of `gentle-shell` for plain Pi,
+and do not load the npm version alongside the local copy.
+
+## Differences from the original
+
+- The command is `/tps` (the original uses `/throughput`).
+- The widget renders below the editor in `#7E86AE` and shows one fixed line:
+  `TPS`, output, input, cache read/write, `cache %`, total and duration.
+- `/tps status` publishes that same line instead of the original compact format.
+- The widget is mounted once and repainted in place instead of being registered
+  again on every update.
+- TTFT and the approximate prompt rate are not displayed.
 
 ## License
 
+Released under the MIT License. The original copyright notice of Andreas
+Petersson is retained in [LICENSE](LICENSE), as the license requires.
+
+
 [MIT](LICENSE)
 
-After `/throughput reset` during a response, live and final rates use only output
+After `/tps reset` during a response, live and final rates use only output
 since the reset. The final token total still describes the complete response.
 If provider usage is unavailable at reset time, the earlier output is estimated
 from its deltas and subtracted from the final rate calculation.

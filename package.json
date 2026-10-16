@@ -1,7 +1,7 @@
 {
-	"name": "pi-live-throughput",
+	"name": "pi-tps-stats",
 	"version": "0.3.0",
-	"description": "Live tokens/sec throughput display for the Pi coding agent",
+	"description": "Live TPS and token usage display for the Pi coding agent (fork of pi-live-throughput)",
 	"keywords": [
 		"pi-package",
 		"extension",
@@ -18,10 +18,10 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/apetersson/pi-live-throughput.git"
+		"url": "git+https://github.com/restevean/pi-tps-stats.git"
 	},
-	"homepage": "https://github.com/apetersson/pi-live-throughput#readme",
-	"bugs": "https://github.com/apetersson/pi-live-throughput/issues",
+	"homepage": "https://github.com/restevean/pi-tps-stats#readme",
+	"bugs": "https://github.com/restevean/pi-tps-stats/issues",
 	"scripts": {
 		"check": "tsc --noEmit",
 		"format": "prettier --write .",
@@ -31,10 +31,12 @@
 		"verify": "pnpm run format:check && pnpm run check && pnpm run lint && pnpm run test"
 	},
 	"peerDependencies": {
-		"@earendil-works/pi-coding-agent": "^1.0.0"
+		"@earendil-works/pi-coding-agent": "^1.0.0",
+		"@earendil-works/pi-tui": "*"
 	},
 	"devDependencies": {
 		"@earendil-works/pi-coding-agent": "^1.0.0",
+		"@earendil-works/pi-tui": "^1.0.0",
 		"@eslint/js": "^10.0.1",
 		"eslint": "^10.8.1",
 		"eslint-config-prettier": "^10.1.8",

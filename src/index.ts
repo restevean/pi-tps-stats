@@ -9,14 +9,18 @@
  * Throughput measurement starts only after a second output token has been
  * observed, so time-to-first-token latency never dilutes rolling, average, or
  * peak rates; the token counters still report cumulative response output.
- * Final summaries also report conservatively available prompt/cache usage and
- * request-boundary-to-first-output timing.
+ * Final summaries also report the response's input and cache usage. The status
+ * mode publishes the same line as the widget.
  */
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 
 const WIDGET_KEY = "throughput";
 const STATUS_KEY = "throughput";
+// Dedicated throughput foreground token: #7E86AE, independent of the active theme.
+const THROUGHPUT_COLOR = "\u001b[38;2;126;134;174m";
+const RESET_FOREGROUND = "\u001b[39m";
 const WINDOW_MS = 3000;
 const UPDATE_INTERVAL_MS = 200;
 const CHARS_PER_TOKEN = 4;
@@ -29,8 +33,15 @@ interface Sample {
 	tokens: number;
 }
 
+interface PromptUsage {
+	input: number;
+	cacheRead: number;
+	cacheWrite: number;
+}
+
 interface StreamingState {
 	kind: "streaming";
+	usage: PromptUsage;
 	responseStartTime: number;
 	providerRequestTime: number | undefined;
 	firstOutputTime: number | undefined;
@@ -47,22 +58,14 @@ interface StreamingState {
 	model: string;
 }
 
-interface PromptMetrics {
-	inputTokens: number | undefined;
-	cacheReadTokens: number | undefined;
-	cacheWriteTokens: number | undefined;
-	ttftMs: number | undefined;
-	approximatePromptRate: number | undefined;
-}
-
 interface FinalState {
 	kind: "final";
+	usage: PromptUsage;
 	outputTokens: number;
 	elapsedSec: number;
 	averageRate: number;
 	peakRate: number;
 	model: string;
-	prompt: PromptMetrics;
 }
 
 type ThroughputState = StreamingState | FinalState;
@@ -74,13 +77,13 @@ export default function (pi: ExtensionAPI): void {
 	let ui: ExtensionUIContext | undefined;
 	let hasUI = false;
 	let pendingProviderRequestTime: number | undefined;
+	let customWidgets = false;
+	let widgetOwner: object | undefined;
+	let widgetContent = "";
+	let requestWidgetRender: (() => void) | undefined;
 
-	const fmt = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n)));
 	const fmtRate = (rate: number): string => (rate >= 100 ? rate.toFixed(0) : rate.toFixed(1));
-	const fmtTtft = (ms: number): string => (ms < 1000 ? `${String(Math.round(ms))}ms` : `${(ms / 1000).toFixed(2)}s`);
 	const estimatedTokens = (chars: number): number => chars / CHARS_PER_TOKEN;
-	const positiveMetric = (value: number): number | undefined =>
-		Number.isFinite(value) && value > 0 ? value : undefined;
 	const isFirstOutputEvent = (update: { type: string; delta?: string; content?: string }): boolean => {
 		switch (update.type) {
 			case "text_start":
@@ -100,37 +103,30 @@ export default function (pi: ExtensionAPI): void {
 		}
 	};
 
-	const promptMetrics = (
-		stream: StreamingState,
-		usage: { input: number; cacheRead: number; cacheWrite: number },
-	): PromptMetrics => {
-		const inputTokens = positiveMetric(usage.input);
-		const cacheReadTokens = positiveMetric(usage.cacheRead);
-		const cacheWriteTokens = positiveMetric(usage.cacheWrite);
-		const ttftMs =
-			stream.providerRequestTime !== undefined && stream.firstOutputTime !== undefined
-				? Math.max(0, stream.firstOutputTime - stream.providerRequestTime)
-				: undefined;
-		const processedTokens = (inputTokens ?? 0) + (cacheWriteTokens ?? 0);
-		const approximatePromptRate =
-			processedTokens > 0 && ttftMs !== undefined && ttftMs > 0 ? processedTokens / (ttftMs / 1000) : undefined;
-		return { inputTokens, cacheReadTokens, cacheWriteTokens, ttftMs, approximatePromptRate };
+	const widgetLine = (
+		rate: number,
+		output: number,
+		elapsedSec: number,
+		usage: PromptUsage,
+		estimated = false,
+	): string => {
+		const count = (value: number): string => Math.round(value).toLocaleString("en-US");
+		const estimateMark = estimated ? "~" : "";
+		const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+		const total = output + promptTokens;
+		const percent = (tokens: number): string => `${(promptTokens > 0 ? (tokens / promptTokens) * 100 : 0).toFixed(1)}%`;
+		return `TPS ${estimateMark}${fmtRate(rate)} tok/s. out ${estimateMark}${count(output)}, in ${count(usage.input)}, cache ${count(usage.cacheRead)}/${count(usage.cacheWrite)}, cache % ${percent(usage.cacheRead)}/${percent(usage.cacheWrite)}, total ${estimateMark}${count(total)}, ${elapsedSec.toFixed(1)}s`;
 	};
 
-	const promptSummary = (prompt: PromptMetrics): string => {
-		const parts: string[] = [];
-		if (prompt.inputTokens !== undefined) parts.push(`input ${fmt(prompt.inputTokens)} tok`);
-		if (prompt.cacheReadTokens !== undefined) parts.push(`cache read ${fmt(prompt.cacheReadTokens)} tok`);
-		if (prompt.cacheWriteTokens !== undefined) parts.push(`cache write ${fmt(prompt.cacheWriteTokens)} tok`);
-		if (prompt.ttftMs !== undefined) parts.push(`TTFT ${fmtTtft(prompt.ttftMs)}`);
-		if (prompt.approximatePromptRate !== undefined) {
-			parts.push(`approx. prompt ${fmtRate(prompt.approximatePromptRate)} tok/s`);
-		}
-		return parts.join(" · ");
+	const clearWidget = (): void => {
+		ui?.setWidget(WIDGET_KEY, undefined);
+		widgetOwner = undefined;
+		widgetContent = "";
+		requestWidgetRender = undefined;
 	};
 
 	const clearUi = (): void => {
-		ui?.setWidget(WIDGET_KEY, undefined);
+		clearWidget();
 		ui?.setStatus(STATUS_KEY, undefined);
 	};
 
@@ -164,27 +160,48 @@ export default function (pi: ExtensionAPI): void {
 	};
 
 	const showLine = (line: string): void => {
+		if (!ui) return;
 		if (mode === "status") {
-			ui?.setWidget(WIDGET_KEY, undefined);
-			ui?.setStatus(STATUS_KEY, line);
-		} else {
-			ui?.setStatus(STATUS_KEY, undefined);
-			ui?.setWidget(WIDGET_KEY, [line]);
+			// Same text as the widget; the host owns the status color and strips escapes.
+			clearWidget();
+			ui.setStatus(STATUS_KEY, line);
+			return;
 		}
+
+		ui.setStatus(STATUS_KEY, undefined);
+		widgetContent = `${THROUGHPUT_COLOR}${line}${RESET_FOREGROUND}`;
+		if (!customWidgets) {
+			// RPC supports string widgets, not terminal component factories.
+			ui.setWidget(WIDGET_KEY, [widgetContent], { placement: "belowEditor" });
+			return;
+		}
+		if (widgetOwner) {
+			requestWidgetRender?.();
+			return;
+		}
+
+		const owner = {};
+		widgetOwner = owner;
+		ui.setWidget(WIDGET_KEY, (tui) => {
+			requestWidgetRender = () => tui.requestRender();
+			return {
+				render: (width) => [truncateToWidth(widgetContent, width)],
+				invalidate() {},
+				dispose() {
+					if (widgetOwner !== owner) return;
+					widgetOwner = undefined;
+					widgetContent = "";
+					requestWidgetRender = undefined;
+				},
+			};
+		}, { placement: "belowEditor" });
 	};
 
 	const render = (): void => {
 		if (!state || !hasUI || !enabled) return;
 
 		if (state.kind === "final") {
-			const model = state.model ? ` · ${state.model}` : "";
-			const prompt = promptSummary(state.prompt);
-			const promptSuffix = prompt ? ` · ${prompt}` : "";
-			const line =
-				mode === "status"
-					? `✓ ${fmt(state.outputTokens)} tok · ${fmtRate(state.averageRate)} tok/s${promptSuffix}`
-					: `✓ ${fmt(state.outputTokens)} tok in ${state.elapsedSec.toFixed(1)}s · ${fmtRate(state.averageRate)} tok/s avg · peak ${fmtRate(state.peakRate)} tok/s${promptSuffix}${model}`;
-			showLine(line);
+			showLine(widgetLine(state.averageRate, state.outputTokens, state.elapsedSec, state.usage));
 			return;
 		}
 
@@ -193,20 +210,13 @@ export default function (pi: ExtensionAPI): void {
 		state.peakRate = Math.max(state.peakRate, live);
 		const elapsedSec = state.measurementStartTime === undefined ? 0 : (now - state.measurementStartTime) / 1000;
 		const outputTokens = liveOutputTokens(state);
-		const averageRate = elapsedSec > 0 ? measuredOutputTokens(state, outputTokens) / elapsedSec : 0;
-		const estimateLabel = state.usesReportedUsage ? "" : "est. ";
-		const estimateMark = state.usesReportedUsage ? "" : "~";
-		const model = state.model ? ` · ${state.model}` : "";
-		const line =
-			mode === "status"
-				? `⚡ ${estimateLabel}${fmtRate(live)} tok/s · ${estimateMark}${fmt(outputTokens)} tok`
-				: `⚡ ${estimateLabel}${fmtRate(live)} tok/s · avg ${fmtRate(averageRate)} tok/s · ${estimateMark}${fmt(outputTokens)} tok · ${elapsedSec.toFixed(1)}s${model}`;
-		showLine(line);
+		showLine(widgetLine(live, outputTokens, elapsedSec, state.usage, !state.usesReportedUsage));
 	};
 
 	pi.on("session_start", (_event, ctx) => {
 		ui = ctx.ui;
 		hasUI = ctx.hasUI;
+		customWidgets = ctx.mode === "tui";
 	});
 
 	pi.on("session_shutdown", () => {
@@ -228,6 +238,7 @@ export default function (pi: ExtensionAPI): void {
 		const now = Date.now();
 		state = {
 			kind: "streaming",
+			usage: { ...event.message.usage },
 			responseStartTime: now,
 			providerRequestTime: pendingProviderRequestTime,
 			firstOutputTime: undefined,
@@ -252,6 +263,7 @@ export default function (pi: ExtensionAPI): void {
 		ui = ctx.ui;
 		hasUI = ctx.hasUI;
 		const stream = state;
+		stream.usage = { ...event.message.usage };
 		stream.model = event.message.responseModel ?? event.message.model;
 		const update = event.assistantMessageEvent;
 		const now = Date.now();
@@ -322,18 +334,18 @@ export default function (pi: ExtensionAPI): void {
 		const peakRate = Math.max(stream.peakRate, rollingRate(stream, now), averageRate);
 		state = {
 			kind: "final",
+			usage: { ...event.message.usage },
 			outputTokens,
 			elapsedSec,
 			averageRate,
 			peakRate,
 			model: event.message.responseModel ?? event.message.model,
-			prompt: promptMetrics(stream, event.message.usage),
 		};
 		render();
 	});
 
-	pi.registerCommand("throughput", {
-		description: "Show live tokens/sec. Args: on|off|widget|status|reset",
+	pi.registerCommand("tps", {
+		description: "Show TPS and token usage below the editor. Args: on|off|widget|status|reset",
 		handler: (args, ctx) => {
 			ui = ctx.ui;
 			hasUI = ctx.hasUI;
@@ -360,9 +372,9 @@ export default function (pi: ExtensionAPI): void {
 					return Promise.resolve();
 				case "widget":
 				case "status":
+					if (mode !== arg) clearUi();
 					mode = arg;
 					enabled = true;
-					clearUi();
 					render();
 					ctx.ui.notify(`Live throughput: ${mode}`, "info");
 					return Promise.resolve();
@@ -381,7 +393,6 @@ export default function (pi: ExtensionAPI): void {
 						state.samples = [];
 						state.peakRate = 0;
 						state.lastRender = now;
-						clearUi();
 						render();
 						ctx.ui.notify("Current throughput metrics reset", "info");
 					} else if (state?.kind === "final") {
@@ -393,7 +404,7 @@ export default function (pi: ExtensionAPI): void {
 					}
 					return Promise.resolve();
 				default:
-					ctx.ui.notify("Usage: /throughput [on|off|widget|status|reset|toggle]", "error");
+					ctx.ui.notify("Usage: /tps [on|off|widget|status|reset|toggle]", "error");
 					return Promise.resolve();
 			}
 		},
