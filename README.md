@@ -93,9 +93,11 @@ clicks to extensions; `/tps stats` always works. A click while the panel is open
 and a click before the first response finishes only reports that there is no data.
 
 `/tps stats` opens a framed panel, centered on the screen like the Claude usage
-panel, narrow (26.25% of the terminal, at least 56 columns) (close it with Esc or `q`) with one entry per completed
-assistant message that produced output since the session started (aborted or
-empty messages are skipped, and also left out of the `avg` on the widget line):
+panel (close it with Esc or `q`). It is narrow: 26.25% of the terminal, at least
+56 columns. It has one entry per completed assistant message that produced output
+since the session started. Aborted or empty messages, and messages left with less
+than one token after a `/tps reset`, are skipped, and are also left out of the
+`avg` on the widget line. The panel contains:
 
 - Two compact bar graphs with a value axis, one for TPS and one for cache read %,
   drawn oldest to newest. Each message is a bar two columns wide, one blank column apart, and the bars

@@ -1075,3 +1075,68 @@ test("a short terminal shrinks the graphs so the centered panel still fits in 90
 		assert.deepEqual(heights, [18, 24], "26 rows get 3-row graphs; 27 rows (24 / 0.9) get the full panel");
 	});
 });
+
+test("a reset that leaves no measured output is not a statistics sample", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		// Second message: 100 tokens arrive, the user resets, and nothing more is produced.
+		setNow(3000);
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		setNow(3500);
+		usageUpdate(h, 100);
+		setNow(4000);
+		await h.commands.get("tps").handler("reset", h.ctx);
+		setNow(5000);
+		h.handlers.get("message_end")({ message: assistantMessage({ output: 100 }) }, h.ctx);
+		assert.match(h.view.widget[0], /^TPS 0\.0 tok\/s\. avg 100 tok\/s, /, "the line still shows the empty window");
+		const open = h.commands.get("tps").handler("stats", h.ctx);
+		const text = h.panels[0].component.render(80).join("\n");
+		assert.ok(text.includes("1 response"), `only the first message counts: ${text}`);
+		assert.ok(text.includes("avg 100  ┄ max 100  ┄ min 100"), "the 0 tok/s window did not pull the minimum down");
+		h.panels[0].component.handleInput("q");
+		await open;
+	});
+});
+
+test("a reset followed by more output still records that message, measured after the reset", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		setNow(3000);
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		setNow(3500);
+		usageUpdate(h, 100);
+		setNow(4000);
+		await h.commands.get("tps").handler("reset", h.ctx);
+		setNow(5000);
+		usageUpdate(h, 200);
+		h.handlers.get("message_end")({ message: assistantMessage({ output: 200 }) }, h.ctx);
+		const open = h.commands.get("tps").handler("stats", h.ctx);
+		assert.ok(h.panels[0].component.render(80).join("\n").includes("2 responses"));
+		h.panels[0].component.handleInput("q");
+		await open;
+	});
+});
+
+test("an estimated-mode reset that leaves less than one token is not a statistics sample", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		setNow(3000);
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		setNow(3500);
+		// 402 characters estimate 100.5 tokens; the provider later reports 101, so 0.5 is left.
+		update(h, "x".repeat(402));
+		setNow(4000);
+		await h.commands.get("tps").handler("reset", h.ctx);
+		setNow(5000);
+		h.handlers.get("message_end")({ message: assistantMessage({ output: 101 }) }, h.ctx);
+		const open = h.commands.get("tps").handler("stats", h.ctx);
+		const text = h.panels[0].component.render(80).join("\n");
+		assert.ok(text.includes("1 response"), `half a token is not a measurement: ${text}`);
+		assert.match(h.view.widget[0], /avg 100 tok\/s, /, "and it does not touch the session average");
+		h.panels[0].component.handleInput("q");
+		await open;
+	});
+});

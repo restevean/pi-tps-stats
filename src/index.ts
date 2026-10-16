@@ -88,6 +88,8 @@ export default function (pi: ExtensionAPI): void {
 	let widgetOwner: object | undefined;
 	let widgetContent = "";
 	let requestWidgetRender: (() => void) | undefined;
+	// True while the stats panel is open, so a click on the line cannot stack a second one.
+	let panelOpen = false;
 
 	const fmtRate = formatRate;
 	const estimatedTokens = (chars: number): number => chars / CHARS_PER_TOKEN;
@@ -390,16 +392,19 @@ export default function (pi: ExtensionAPI): void {
 			measuredTokens = windowOutputTokens;
 		}
 		const elapsedSec = (now - measurementStart) / 1000;
-		const averageRate = measuredTokens / Math.max(elapsedSec, 0.001);
-		// An empty message (aborted or failed) is not a speed measurement: it would pull
-		// the minimum to 0 and dilute the averages.
-		if (outputTokens > 0) {
+		const generationSeconds = Math.max(elapsedSec, 0.001);
+		const averageRate = measuredTokens / generationSeconds;
+		// Less than one measured token is not a speed measurement: an aborted or failed
+		// message, or a /tps reset after which no more output arrived (including the
+		// fraction an estimated baseline can leave), would pull the minimum down and
+		// dilute the averages. The widget line still shows that final window.
+		if (measuredTokens >= 1) {
 			sessionTokens += measuredTokens;
-			sessionSeconds += Math.max(elapsedSec, 0.001);
+			sessionSeconds += generationSeconds;
 			samples.push({
 				tps: averageRate,
 				tokens: measuredTokens,
-				seconds: Math.max(elapsedSec, 0.001),
+				seconds: generationSeconds,
 				input: event.message.usage.input,
 				cacheRead: event.message.usage.cacheRead,
 				cacheWrite: event.message.usage.cacheWrite,
@@ -417,9 +422,6 @@ export default function (pi: ExtensionAPI): void {
 		};
 		render();
 	});
-
-	// True while the panel is open, so a click on the line cannot stack a second one.
-	let panelOpen = false;
 
 	const showStats = async (panelUi: ExtensionUIContext): Promise<void> => {
 		if (samples.length === 0) {

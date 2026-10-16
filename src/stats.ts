@@ -185,6 +185,8 @@ export function renderStatsPanel(
 	// Both graphs share one width, so one count: the text below and the bars always agree.
 	const area = Math.max(0, content - AXIS_WIDTH - RIGHT_MARGIN);
 	const { barWidth, shown } = fitBars(samples.length, area);
+	// The newest `shown` items. Not slice(-shown): slice(-0) would return all of them.
+	const newest = <T>(items: readonly T[]): T[] => (shown > 0 ? items.slice(-shown) : []);
 	// The numbers cover the whole session; the bars only the newest responses that fit.
 	const scope =
 		shown < samples.length
@@ -199,7 +201,7 @@ export function renderStatsPanel(
 		range: Range,
 		format: (value: number) => string,
 	): string[] => {
-		const rows = barChart(values.slice(-shown), scale, barWidth, graphHeight);
+		const rows = barChart(newest(values), scale, barWidth, graphHeight);
 		// The reference lines sit at the rows where the session's highest and lowest value reach.
 		// A value above the axis (an old response that is no longer drawn) has no row, so no line.
 		const refs = new Set(
@@ -217,7 +219,7 @@ export function renderStatsPanel(
 	};
 	// The TPS axis follows the bars that are drawn, so they use the full height. The cache
 	// graph is a percentage, so its 0..100 axis stays fixed.
-	const visibleTpsMax = Math.max(0, ...samples.slice(-shown).map((sample) => sample.tps));
+	const visibleTpsMax = Math.max(0, ...newest(samples).map((sample) => sample.tps));
 	const bodyLines = [
 		"",
 		scope,

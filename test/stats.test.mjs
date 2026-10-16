@@ -346,3 +346,21 @@ test("scaling to the visible bars survives an all-zero visible window", () => {
 	assert.ok(rows[0].includes(" 0.0 │"), "no division by zero: the axis top is 0.0");
 	assert.ok(barsOf(rows[5]).includes("▁"), "zero bars keep the smallest block");
 });
+
+test("a panel too narrow for a single bar draws no bars at all, instead of drawing them all", () => {
+	const bars = /[▁▂▃▄▅▆▇█]/;
+	// Usable bar area = width - 13; one 2-column bar needs 2, so 15 columns is the first that fits one.
+	for (let width = 1; width < 15; width++) {
+		const text = renderStatsPanel(many(5), width).join("\n");
+		assert.ok(!bars.test(text), `width ${width} drew bars: ${text}`);
+	}
+	const one = renderStatsPanel(many(5), 15).join("\n");
+	assert.ok(bars.test(one), "at 15 columns one bar fits and is drawn");
+});
+
+test("the visible TPS scale is also empty when no bar fits, not the session maximum", () => {
+	const lines = renderStatsPanel([mk(500), ...Array.from({ length: 4 }, () => mk(10))], 12);
+	const axisTop = lines.find((line) => /\b0\.0\b/.test(line) && line.includes("│"));
+	assert.ok(axisTop, `with nothing drawn the axis top is 0.0: ${lines.join("\n")}`);
+	assert.ok(!lines.some((line) => /\b500\b/.test(line.split("│")[0] ?? "")), "the axis never shows the old record");
+});
