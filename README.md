@@ -143,11 +143,13 @@ approximate prompt rate are no longer displayed.
 
 ## Install
 
-Install directly from GitHub:
+Install a released version, pinned to its tag:
 
 ```bash
-pi install git:github.com/restevean/pi-tps-stats
+pi install git:github.com/restevean/pi-tps-stats@v0.0.1
 ```
+
+Without the `@v0.0.1` suffix Pi follows the latest `main`, which can change.
 
 Or install a local checkout:
 
@@ -215,6 +217,19 @@ and do not load the npm version alongside the local copy.
 - The widget is mounted once and repainted in place instead of being registered
   again on every update.
 - TTFT and the approximate prompt rate are not displayed.
+
+## Security
+
+The extension reads only the usage counts Pi reports for each assistant message. It
+does not read or write files, open network connections, start processes or read
+environment variables, and it never shows model text: the screen receives formatted
+numbers and fixed messages. A count that is not a finite number is shown as 0 and a
+very large one is capped at 10^15. Like any Pi extension it runs with your
+permissions, so install it from a pinned tag.
+
+The package has no runtime dependencies and no install scripts, and publishes only
+`src`, `README.md` and `LICENSE`. Dependency build scripts are denied in
+`pnpm-workspace.yaml`, and the tests enforce all of the above.
 
 ## License
 
