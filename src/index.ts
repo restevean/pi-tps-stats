@@ -182,19 +182,27 @@ export default function (pi: ExtensionAPI): void {
 
 		const owner = {};
 		widgetOwner = owner;
-		ui.setWidget(WIDGET_KEY, (tui) => {
-			requestWidgetRender = () => tui.requestRender();
-			return {
-				render: (width) => [truncateToWidth(widgetContent, width)],
-				invalidate() {},
-				dispose() {
-					if (widgetOwner !== owner) return;
-					widgetOwner = undefined;
-					widgetContent = "";
-					requestWidgetRender = undefined;
-				},
-			};
-		}, { placement: "belowEditor" });
+		ui.setWidget(
+			WIDGET_KEY,
+			(tui) => {
+				requestWidgetRender = () => {
+					tui.requestRender();
+				};
+				return {
+					render: (width) => [truncateToWidth(widgetContent, width)],
+					invalidate() {
+						// Stateless: render() always reads the live content.
+					},
+					dispose() {
+						if (widgetOwner !== owner) return;
+						widgetOwner = undefined;
+						widgetContent = "";
+						requestWidgetRender = undefined;
+					},
+				};
+			},
+			{ placement: "belowEditor" },
+		);
 	};
 
 	const render = (): void => {

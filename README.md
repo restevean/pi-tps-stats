@@ -6,7 +6,6 @@
 > (`dcedab3 chore(release): 0.3.0`). This project is independent and is not
 > affiliated with or endorsed by the original author.
 
-
 A single-line live tokens/sec display below the prompt editor for the
 [Pi coding agent](https://pi.dev).
 
@@ -106,14 +105,14 @@ The persistent `#7E86AE` widget is enabled below the prompt editor by default.
 After reloading the local extension, use `/tps widget` to try it, or
 `/tps status` to publish the same text as a status instead.
 
-| Command              | Effect                                                 |
-| -------------------- | ------------------------------------------------------ |
-| `/tps`               | Toggle the display on or off                           |
-| `/tps on`            | Enable the previously selected display mode            |
-| `/tps off`           | Hide the display                                       |
-| `/tps widget`        | Enable the persistent widget below the editor          |
-| `/tps status`        | Publish the same line as a host status instead         |
-| `/tps reset`         | Reset an active measurement or clear the final summary |
+| Command       | Effect                                                 |
+| ------------- | ------------------------------------------------------ |
+| `/tps`        | Toggle the display on or off                           |
+| `/tps on`     | Enable the previously selected display mode            |
+| `/tps off`    | Hide the display                                       |
+| `/tps widget` | Enable the persistent widget below the editor          |
+| `/tps status` | Publish the same line as a host status instead         |
+| `/tps reset`  | Reset an active measurement or clear the final summary |
 
 ## Development
 
@@ -153,7 +152,6 @@ and do not load the npm version alongside the local copy.
 
 Released under the MIT License. The original copyright notice of Andreas
 Petersson is retained in [LICENSE](LICENSE), as the license requires.
-
 
 [MIT](LICENSE)
 

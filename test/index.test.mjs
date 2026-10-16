@@ -13,11 +13,14 @@ function createHarness({ mode = "tui", hasUI = true } = {}) {
 	const redraw = () => {
 		const content = typeof component?.render === "function" ? component.render(4096) : component;
 		view.rawWidget = content;
-		view.widget = content?.map((line) =>
-			line.replace("\u001b[38;2;126;134;174m", "").replace("\u001b[39m", ""),
-		);
+		view.widget = content?.map((line) => line.replace("\u001b[38;2;126;134;174m", "").replace("\u001b[39m", ""));
 	};
-	const tui = { requestRender() { view.renderRequests += 1; redraw(); } };
+	const tui = {
+		requestRender() {
+			view.renderRequests += 1;
+			redraw();
+		},
+	};
 	const view = {
 		renderRequests: 0,
 		widget: undefined,
@@ -79,10 +82,6 @@ function assistantMessage({
 		responseModel,
 		usage: { input, output, cacheRead, cacheWrite },
 	};
-}
-
-function providerRequest(harness) {
-	harness.handlers.get("before_provider_request")({ type: "before_provider_request", payload: {} }, harness.ctx);
 }
 
 function update(harness, delta, type = "text_delta", output = 0) {
@@ -228,13 +227,14 @@ test("updates all screenshot fields during streaming without changing the footer
 	await withFakeClock(async (setNow) => {
 		const { handlers, commands, ctx, view } = createHarness();
 		handlers.get("message_start")({ message: assistantMessage() }, ctx);
-		const sendUsage = (output) => handlers.get("message_update")(
-			{
-				message: assistantMessage({ output, input: 2, cacheRead: 0, cacheWrite: 85571 }),
-				assistantMessageEvent: { type: "text_end", content: "" },
-			},
-			ctx,
-		);
+		const sendUsage = (output) =>
+			handlers.get("message_update")(
+				{
+					message: assistantMessage({ output, input: 2, cacheRead: 0, cacheWrite: 85571 }),
+					assistantMessageEvent: { type: "text_end", content: "" },
+				},
+				ctx,
+			);
 		setNow(1400);
 		sendUsage(33);
 		setNow(2400);
@@ -274,9 +274,7 @@ test("shows cache read/write percentages of prompt tokens next to their counts",
 test("renders zero cache percentages when there are no prompt tokens", () => {
 	const { handlers, ctx, view } = createHarness();
 	handlers.get("message_start")({ message: assistantMessage() }, ctx);
-	assert.deepEqual(view.widget, [
-		"TPS ~0.0 tok/s. out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
-	]);
+	assert.deepEqual(view.widget, ["TPS ~0.0 tok/s. out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s"]);
 });
 
 test("starts the measurement window only after a second output token", async () => {
