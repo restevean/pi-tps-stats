@@ -44,6 +44,6 @@ Blocked on a human action: as of 2026-10-16 `npm view pi-tps-stats` returns 404,
 2. Change the `@earendil-works/pi-coding-agent` range in `peerDependencies` to the `"*"` range the package docs require for host-provided packages; `@earendil-works/pi-tui` already uses `"*"`. Confirm no host-provided package is listed under `dependencies` — the manifest has no `dependencies` key at all today.
 3. Run `npm pack --dry-run` and confirm the tarball holds only `src/**`, `README.md` and `LICENSE` besides the `package.json` npm always includes, then run `pnpm run verify`.
 4. Human step: create the `restevean` npm account, verify the email, enable 2FA, and complete `npm login` with web auth. The web link is short-lived: the one attempted here expired after about five minutes.
-5. Publish the released version `0.1.0` (tag `v0.1.0`, already on `origin/main`), then confirm `npm view pi-tps-stats` resolves, the package is found in the gallery, `pi install npm:pi-tps-stats` installs it, and no extension warning reports a misdeclared host dependency.
+5. Publish the latest released version (its `vX.Y.Z` tag is already on `origin/main`), then confirm `npm view pi-tps-stats` resolves, the package is found in the gallery, `pi install npm:pi-tps-stats` installs it, and no extension warning reports a misdeclared host dependency.
 6. Optional and outside the acceptance criteria: add `pi.image` and `pi.video` to the `pi` manifest, as the package docs describe, only if a gallery preview is wanted.
 <!-- SECTION:PLAN:END -->
