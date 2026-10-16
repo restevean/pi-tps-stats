@@ -20,10 +20,8 @@ terminal width, keeping the widget on one row. Switching to status mode, hiding
 the display, or ending the session removes only this extension's widget.
 
 This prevents throughput updates from moving the widget relative to other
-widgets. TPS uses the below-editor area, separate from the above-editor YOLO
-banner. This placement is a visual trial, not a verified fix for duplicated
-YOLO rendering; other extensions still control their own widgets.
-The extension never modifies YOLO state, its banner, or Gentle Shell. RPC mode
+widgets. The widget uses the below-editor area; other extensions still control
+their own widgets, and this extension never modifies them or the host. RPC mode
 keeps the existing string-array widget path because custom terminal components
 are not supported there.
 
