@@ -29,6 +29,30 @@ const MEASUREMENT_MIN_TOKENS = 2;
 
 type DisplayMode = "widget" | "status";
 
+// Usage counts reach us from the provider through the host. Anything that is not a finite
+// number becomes 0 (it is never coerced, so no hostile toString/valueOf runs) and huge
+// values are capped, so the screen only ever shows plain, bounded numbers.
+const MAX_COUNT = 1e15;
+const safeCount = (value: unknown): number =>
+	typeof value === "number" && Number.isFinite(value) ? Math.min(MAX_COUNT, Math.max(0, value)) : 0;
+const readUsage = (usage: unknown): PromptUsage & { output: number } => {
+	const raw = (usage ?? {}) as Record<string, unknown>;
+	// Each field on its own: a getter that throws costs that field, not the whole handler.
+	const field = (key: string): number => {
+		try {
+			return safeCount(raw[key]);
+		} catch {
+			return 0;
+		}
+	};
+	return {
+		input: field("input"),
+		output: field("output"),
+		cacheRead: field("cacheRead"),
+		cacheWrite: field("cacheWrite"),
+	};
+};
+
 interface Sample {
 	t: number;
 	tokens: number;
@@ -300,7 +324,7 @@ export default function (pi: ExtensionAPI): void {
 		const now = Date.now();
 		state = {
 			kind: "streaming",
-			usage: { ...event.message.usage },
+			usage: readUsage(event.message.usage),
 			responseStartTime: now,
 			providerRequestTime: pendingProviderRequestTime,
 			firstOutputTime: undefined,
@@ -325,7 +349,8 @@ export default function (pi: ExtensionAPI): void {
 		ui = ctx.ui;
 		hasUI = ctx.hasUI;
 		const stream = state;
-		stream.usage = { ...event.message.usage };
+		const usage = readUsage(event.message.usage);
+		stream.usage = usage;
 		stream.model = event.message.responseModel ?? event.message.model;
 		const update = event.assistantMessageEvent;
 		const now = Date.now();
@@ -333,7 +358,7 @@ export default function (pi: ExtensionAPI): void {
 			update.type === "text_delta" || update.type === "thinking_delta" || update.type === "toolcall_delta";
 		const chars = isDelta ? update.delta.length : 0;
 		if (stream.firstOutputTime === undefined && isFirstOutputEvent(update)) stream.firstOutputTime = now;
-		const providerOutput = event.message.usage.output;
+		const providerOutput = usage.output;
 		let providerAdvanced = false;
 		let switchedToReportedUsage = false;
 
@@ -379,7 +404,8 @@ export default function (pi: ExtensionAPI): void {
 		hasUI = ctx.hasUI;
 		const now = Date.now();
 		const stream = state;
-		const outputTokens = event.message.usage.output;
+		const usage = readUsage(event.message.usage);
+		const outputTokens = usage.output;
 		const windowOutputTokens = Math.max(0, outputTokens - stream.providerOutputBaseline);
 		let measurementStart = stream.measurementStartTime ?? stream.responseStartTime;
 		let measuredTokens =
@@ -405,15 +431,15 @@ export default function (pi: ExtensionAPI): void {
 				tps: averageRate,
 				tokens: measuredTokens,
 				seconds: generationSeconds,
-				input: event.message.usage.input,
-				cacheRead: event.message.usage.cacheRead,
-				cacheWrite: event.message.usage.cacheWrite,
+				input: usage.input,
+				cacheRead: usage.cacheRead,
+				cacheWrite: usage.cacheWrite,
 			});
 		}
 		const peakRate = Math.max(stream.peakRate, rollingRate(stream, now), averageRate);
 		state = {
 			kind: "final",
-			usage: { ...event.message.usage },
+			usage,
 			outputTokens,
 			elapsedSec,
 			averageRate,

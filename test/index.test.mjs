@@ -1140,3 +1140,114 @@ test("an estimated-mode reset that leaves less than one token is not a statistic
 		await open;
 	});
 });
+
+const hostile = (usage) => ({ role: "assistant", model: "m", usage });
+
+test("hostile usage values never reach the screen as NaN, Infinity or huge numbers", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+		h.handlers.get("message_start")({ message: hostile(zero) }, h.ctx);
+		setNow(1500);
+		h.handlers.get("message_update")(
+			{
+				message: hostile({ ...zero, output: Number.POSITIVE_INFINITY }),
+				assistantMessageEvent: { type: "text_delta", delta: "hello" },
+			},
+			h.ctx,
+		);
+		assert.doesNotMatch(h.view.widget[0], /NaN|Infinity/, "a streamed Infinity is ignored");
+		setNow(2000);
+		h.handlers.get("message_end")(
+			{ message: hostile({ input: Number.NaN, output: 100, cacheRead: -5, cacheWrite: 1e308 }) },
+			h.ctx,
+		);
+		const line = h.view.widget[0];
+		assert.doesNotMatch(line, /NaN|Infinity|e\+|-\d/, line);
+		assert.ok(line.length < 160, `bounded length: ${line}`);
+		assert.match(
+			line,
+			/in 0, cache 0\/1,000,000,000,000,000, cache % 0\.0%\/100\.0%/,
+			"NaN and negatives become 0, huge values are capped",
+		);
+		const open = h.commands.get("tps").handler("stats", h.ctx);
+		const text = h.panels[0].component.render(80).join("\n");
+		assert.doesNotMatch(text, /NaN|Infinity|e\+/, "the panel is clean too");
+		h.panels[0].component.handleInput("q");
+		await open;
+	});
+});
+
+test("usage values of the wrong type are treated as zero and never coerced", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		const trap = {
+			valueOf() {
+				throw new Error("valueOf must not be called");
+			},
+			toString() {
+				throw new Error("toString must not be called");
+			},
+		};
+		h.handlers.get("message_start")({ message: hostile({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }) }, h.ctx);
+		setNow(2000);
+		h.handlers.get("message_end")(
+			{ message: hostile({ input: trap, output: 50, cacheRead: "7", cacheWrite: null }) },
+			h.ctx,
+		);
+		assert.match(h.view.widget[0], /out 50, in 0, cache 0\/0, /, h.view.widget[0]);
+	});
+});
+
+test("null or missing usage is treated as zero", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		const m = (usage) => ({ role: "assistant", model: "m", usage });
+		h.handlers.get("message_start")({ message: m(null) }, h.ctx);
+		h.handlers.get("message_update")(
+			{ message: m(undefined), assistantMessageEvent: { type: "text_delta", delta: "hi" } },
+			h.ctx,
+		);
+		setNow(2000);
+		h.handlers.get("message_end")({ message: m({ output: 10n, input: new Number(5) }) }, h.ctx);
+		assert.match(h.view.widget[0], /out 0, in 0, cache 0\/0, /, h.view.widget[0]);
+	});
+});
+
+test("capped usage over a 1 ms response stays plain", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		const m = (usage) => ({ role: "assistant", model: "m", usage });
+		h.handlers.get("message_start")({ message: m({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }) }, h.ctx);
+		setNow(1001);
+		h.handlers.get("message_end")(
+			{ message: m({ input: 1e300, output: 1e300, cacheRead: 1e300, cacheWrite: 1e300 }) },
+			h.ctx,
+		);
+		assert.doesNotMatch(h.view.widget[0], /NaN|Infinity|e\+/, h.view.widget[0]);
+		assert.match(h.view.widget[0], /total 4,000,000,000,000,000, /, h.view.widget[0]);
+	});
+});
+
+test("a usage getter that throws does not break the handler; that field is zero", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		const usage = {
+			output: 80,
+			cacheRead: 20,
+			cacheWrite: 0,
+			get input() {
+				throw new Error("getter must not break the extension");
+			},
+		};
+		h.handlers.get("message_start")(
+			{ message: { role: "assistant", model: "m", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } } },
+			h.ctx,
+		);
+		setNow(2000);
+		assert.doesNotThrow(() =>
+			h.handlers.get("message_end")({ message: { role: "assistant", model: "m", usage } }, h.ctx),
+		);
+		assert.match(h.view.widget[0], /out 80, in 0, cache 20\/0, /, h.view.widget[0]);
+	});
+});
