@@ -1,12 +1,12 @@
 /**
- * Live tokens/sec throughput display for the Pi coding agent.
+ * Live tokens/sec (TPS) display for the Pi coding agent.
  *
  * The default widget uses one line while streaming and replaces it with a
  * provider-usage summary that remains visible until the next response starts.
  * Live metrics prefer cumulative provider usage when it advances during the
  * stream. Until then, clearly labeled estimates count text, thinking, and
  * tool-call delta characters using a four-characters-per-token heuristic.
- * Throughput measurement starts only after a second output token has been
+ * The measurement starts only after a second output token has been
  * observed, so time-to-first-token latency never dilutes rolling, average, or
  * peak rates; the token counters still report cumulative response output.
  * Final summaries also report the response's input and cache usage. The status
@@ -17,10 +17,10 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionUIContext } from "
 import { Key, matchesKey, truncateToWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { formatRate, renderStatsPanel, type PanelStyle, type ResponseSample } from "./stats.ts";
 
-const WIDGET_KEY = "throughput";
-const STATUS_KEY = "throughput";
-// Dedicated throughput foreground token: #7E86AE, independent of the active theme.
-const THROUGHPUT_COLOR = "\u001b[38;2;126;134;174m";
+const WIDGET_KEY = "tps-stats";
+const STATUS_KEY = "tps-stats";
+// Dedicated foreground color #7E86AE, independent of the active theme.
+const TPS_COLOR = "\u001b[38;2;126;134;174m";
 const RESET_FOREGROUND = "\u001b[39m";
 const WINDOW_MS = 3000;
 const UPDATE_INTERVAL_MS = 200;
@@ -69,12 +69,12 @@ interface FinalState {
 	model: string;
 }
 
-type ThroughputState = StreamingState | FinalState;
+type StatsState = StreamingState | FinalState;
 
 export default function (pi: ExtensionAPI): void {
 	let mode: DisplayMode = "widget";
 	let enabled = true;
-	let state: ThroughputState | undefined;
+	let state: StatsState | undefined;
 	// Session totals over completed responses, weighted by time: total output tokens
 	// divided by total generation seconds (not a mean of per-response averages).
 	let sessionTokens = 0;
@@ -227,7 +227,7 @@ export default function (pi: ExtensionAPI): void {
 		}
 
 		ui.setStatus(STATUS_KEY, undefined);
-		widgetContent = `${THROUGHPUT_COLOR}${line}${RESET_FOREGROUND}`;
+		widgetContent = `${TPS_COLOR}${line}${RESET_FOREGROUND}`;
 		if (!customWidgets) {
 			// RPC supports string widgets, not terminal component factories.
 			ui.setWidget(WIDGET_KEY, [widgetContent, ""], { placement: "aboveEditor" });
@@ -448,7 +448,7 @@ export default function (pi: ExtensionAPI): void {
 				const style: PanelStyle = {
 					frame: fg("border"),
 					title: fg("customMessageLabel"),
-					text: (text) => `${THROUGHPUT_COLOR}${text}${RESET_FOREGROUND}`,
+					text: (text) => `${TPS_COLOR}${text}${RESET_FOREGROUND}`,
 					key: fg("accent"),
 					keyText: fg("dim"),
 				};
@@ -496,7 +496,7 @@ export default function (pi: ExtensionAPI): void {
 				ensureWidget();
 				render();
 			} else clearUi();
-			ctx.ui.notify(`Live throughput: ${enabled ? mode : "off"}`, "info");
+			ctx.ui.notify(`tps-stats: ${enabled ? mode : "off"}`, "info");
 			return Promise.resolve();
 		}
 
@@ -505,12 +505,12 @@ export default function (pi: ExtensionAPI): void {
 				enabled = true;
 				ensureWidget();
 				render();
-				ctx.ui.notify(`Live throughput: ${mode}`, "info");
+				ctx.ui.notify(`tps-stats: ${mode}`, "info");
 				return Promise.resolve();
 			case "off":
 				enabled = false;
 				clearUi();
-				ctx.ui.notify("Live throughput: off", "info");
+				ctx.ui.notify("tps-stats: off", "info");
 				return Promise.resolve();
 			case "widget":
 			case "status":
@@ -519,7 +519,7 @@ export default function (pi: ExtensionAPI): void {
 				enabled = true;
 				ensureWidget();
 				render();
-				ctx.ui.notify(`Live throughput: ${mode}`, "info");
+				ctx.ui.notify(`tps-stats: ${mode}`, "info");
 				return Promise.resolve();
 			case "stats":
 				return showStats(ctx.ui);
@@ -539,13 +539,13 @@ export default function (pi: ExtensionAPI): void {
 					state.peakRate = 0;
 					state.lastRender = now;
 					render();
-					ctx.ui.notify("Current throughput metrics reset", "info");
+					ctx.ui.notify("Current tps-stats measurement reset", "info");
 				} else if (state?.kind === "final") {
 					state = undefined;
 					clearUi();
-					ctx.ui.notify("Final throughput summary cleared", "info");
+					ctx.ui.notify("Final tps-stats summary cleared", "info");
 				} else {
-					ctx.ui.notify("No throughput metrics to reset", "info");
+					ctx.ui.notify("No tps-stats metrics to reset", "info");
 				}
 				return Promise.resolve();
 			default:

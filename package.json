@@ -6,7 +6,7 @@
 		"pi-package",
 		"extension",
 		"tokens",
-		"throughput"
+		"tps-stats"
 	],
 	"type": "module",
 	"packageManager": "pnpm@11.13.0",

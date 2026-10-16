@@ -18,7 +18,7 @@ component instead of registering it again. Long lines are truncated to the
 terminal width, keeping the TPS text on one row, followed by one blank row. Switching to status mode, hiding
 the display, or ending the session removes only this extension's widget.
 
-This prevents throughput updates from moving the widget relative to other
+This prevents TPS updates from moving the widget relative to other
 widgets. The widget uses the above-editor area and is mounted, empty, when the
 session starts, because Pi lays widgets out in registration order. That keeps it
 ahead of widgets another extension registers or republishes later, such as a
@@ -53,7 +53,7 @@ from zero because earlier responses are not replayed. `/tps reset` clears only
 the displayed summary or the current measurement, never the session average, and
 a new session or `/reload` starts it over.
 
-Live TPS is the rolling throughput; final TPS is the average over the measured
+Live TPS is the rolling rate; final TPS is the average over the measured
 generation window. Live figures use Pi's cumulative provider-reported
 `usage.output` when it advances. Otherwise text, thinking, and tool-call deltas
 provide estimates, identified by `~` before TPS, output, and total. Final counts
@@ -67,7 +67,7 @@ applies its own status color, so `#7E86AE` only applies to the widget.
 
 ## Measurement window
 
-Live and final throughput rates start measuring only after a second output
+Live and final TPS rates start measuring only after a second output
 token has been observed. Keeping time-to-first-token out of the measurement
 window means the rolling and final average rates describe decoding speed
 rather than prompt processing, provider queueing, or network latency. Only

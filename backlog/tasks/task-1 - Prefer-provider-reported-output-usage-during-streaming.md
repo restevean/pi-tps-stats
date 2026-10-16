@@ -22,7 +22,7 @@ ordinal: 1000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Improve the live throughput display so it uses Pi's cumulative provider-reported output usage whenever a provider exposes it during message streaming. Preserve a clearly identified estimate for providers that report usage only when the response completes, while keeping the final provider usage authoritative.
+Improve the live TPS display so it uses Pi's cumulative provider-reported output usage whenever a provider exposes it during message streaming. Preserve a clearly identified estimate for providers that report usage only when the response completes, while keeping the final provider usage authoritative.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -52,7 +52,7 @@ Caller verification: pnpm run verify passed TypeScript checking and all 4 Node t
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Live throughput now prefers cumulative provider-reported output usage, clearly labels heuristic fallback, processes usage-only updates, and retains authoritative final usage. Verified with pnpm run verify (4/4 tests), correlated xhigh gpt-5.6-sol final review, and a clean reviewed implementation SHA.
+Live TPS now prefers cumulative provider-reported output usage, clearly labels heuristic fallback, processes usage-only updates, and retains authoritative final usage. Verified with pnpm run verify (4/4 tests), correlated xhigh gpt-5.6-sol final review, and a clean reviewed implementation SHA.
 <!-- SECTION:FINAL_SUMMARY:END -->
 
 ## Review findings — gpt56-final — 2026-08-20T19:11:02Z

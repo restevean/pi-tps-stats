@@ -23,14 +23,14 @@ ordinal: 2000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Expose the prompt-side performance information available through Pi's normalized usage data. Report prompt and cache token counts, time to first output, and a clearly labeled best-effort prompt-processing throughput estimate without implying that network and provider queue latency are true model prefill time.
+Expose the prompt-side performance information available through Pi's normalized usage data. Report prompt and cache token counts, time to first output, and a clearly labeled best-effort prompt-processing TPS estimate without implying that network and provider queue latency are true model prefill time.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The extension reports normalized input, cache-read, and cache-write token counts when the provider supplies them and omits unavailable metrics cleanly
 - [x] #2 The extension measures time to first output from the provider request boundary and reports it as TTFT
-- [x] #3 A prompt-processing throughput estimate is shown only when the required token and timing data are available and is clearly labeled approximate
+- [x] #3 A prompt-processing TPS estimate is shown only when the required token and timing data are available and is clearly labeled approximate
 - [x] #4 Cache-read tokens are reported separately and are not presented as tokens processed by the model
 - [x] #5 Documentation defines the prompt-processing estimate and explains that TTFT can include network, queueing, routing, cache lookup, and model startup time
 - [x] #6 Automated tests cover cached, uncached, partially reported, and unavailable provider metrics
@@ -67,7 +67,7 @@ Verdict: ALL GOOD
 Implementation SHA: 35e25f6340cc6b5968b6f93765e6fe35d6e0f8b2
 Validation:
 - `pnpm run verify` — passed (`tsc --noEmit`; 8/8 Node tests)
-- Independent inline Node harness assertions for cache-only exclusion, empty-delta TTFT handling, cache-write-only throughput, and status rendering — passed
+- Independent inline Node harness assertions for cache-only exclusion, empty-delta TTFT handling, cache-write-only TPS, and status rendering — passed
 - `git diff --check 35e25f6340cc6b5968b6f93765e6fe35d6e0f8b2^ 35e25f6340cc6b5968b6f93765e6fe35d6e0f8b2` — passed
 AC evidence:
 - #1 — verified — final normalized positive finite input/cache-read/cache-write fields render independently, while zero/unavailable fields are omitted; cached, uncached, partial, and unavailable assertions passed

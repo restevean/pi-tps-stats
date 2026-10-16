@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import throughputExtension from "../src/index.ts";
+import tpsStatsExtension from "../src/index.ts";
 
 function createHarness({ mode = "tui", hasUI = true } = {}) {
 	const handlers = new Map();
@@ -47,7 +49,7 @@ function createHarness({ mode = "tui", hasUI = true } = {}) {
 			widgetCalls.push({ key, content, options });
 			widgets.delete(key);
 			if (content !== undefined) widgets.set(key, content);
-			if (key !== "throughput") return;
+			if (key !== "tps-stats") return;
 			component?.dispose?.();
 			component = typeof content === "function" ? content(tui, {}) : content;
 			redraw();
@@ -84,7 +86,7 @@ function createHarness({ mode = "tui", hasUI = true } = {}) {
 		},
 	};
 
-	throughputExtension(pi);
+	tpsStatsExtension(pi);
 	handlers.get("session_start")({ reason: "startup" }, ctx);
 
 	return {
@@ -166,7 +168,7 @@ test("updates a persistent widget without moving it relative to the YOLO banner"
 		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
 		await h.commands.get("tps").handler("reset", h.ctx);
 		await h.commands.get("tps").handler("widget", h.ctx);
-		assert.equal(h.widgetCalls.filter((call) => call.key === "throughput" && call.content !== undefined).length, 1);
+		assert.equal(h.widgetCalls.filter((call) => call.key === "tps-stats" && call.content !== undefined).length, 1);
 		assert.deepEqual([...h.widgets.keys()], order);
 		assert.deepEqual(h.widgets.get("gentle:yolo"), ["YOLO ON"]);
 		assert.equal(h.widgetCalls.filter((call) => call.key === "gentle:yolo").length, 1);
@@ -189,7 +191,7 @@ test("leaves one blank row below the TPS line, in widget and RPC mode", () => {
 
 test("mounts an empty widget when the session starts, ahead of the YOLO banner", () => {
 	const h = createHarness();
-	assert.deepEqual([...h.widgets.keys()], ["throughput"]);
+	assert.deepEqual([...h.widgets.keys()], ["tps-stats"]);
 	assert.deepEqual(h.renderAtWidth(80), [], "nothing is drawn before the first response");
 	assert.deepEqual(h.view.widgetOptions, { placement: "aboveEditor" });
 	h.ctx.ui.setWidget("gentle:yolo", ["YOLO ON"]);
@@ -198,8 +200,8 @@ test("mounts an empty widget when the session starts, ahead of the YOLO banner",
 	// The host republishes the banner on every permission check; it must stay after TPS.
 	h.ctx.ui.setWidget("gentle:yolo", ["YOLO ON"]);
 	h.ctx.ui.setWidget("gentle:yolo", ["YOLO ON"]);
-	assert.deepEqual([...h.widgets.keys()], ["throughput", "gentle:yolo"]);
-	assert.equal(h.widgetCalls.filter((call) => call.key === "throughput").length, 1);
+	assert.deepEqual([...h.widgets.keys()], ["tps-stats", "gentle:yolo"]);
+	assert.equal(h.widgetCalls.filter((call) => call.key === "tps-stats").length, 1);
 });
 
 test("off before any response removes the empty mounted widget only", async () => {
@@ -209,7 +211,7 @@ test("off before any response removes the empty mounted widget only", async () =
 	assert.deepEqual([...h.widgets.keys()], ["gentle:yolo"]);
 	await h.commands.get("tps").handler("on", h.ctx);
 	assert.deepEqual(h.renderAtWidth(80), []);
-	assert.equal(h.widgets.has("throughput"), true);
+	assert.equal(h.widgets.has("tps-stats"), true);
 });
 
 test("does not mount at session start in status mode, RPC mode or without a UI", async () => {
@@ -223,7 +225,7 @@ test("does not mount at session start in status mode, RPC mode or without a UI",
 	h.handlers.get("session_start")({}, h.ctx);
 	assert.equal(h.widgets.size, 0, "status mode is kept across a new session start");
 	await h.commands.get("tps").handler("widget", h.ctx);
-	assert.deepEqual([...h.widgets.keys()], ["throughput"], "switching back mounts it again");
+	assert.deepEqual([...h.widgets.keys()], ["tps-stats"], "switching back mounts it again");
 });
 
 test("removes only its own persistent widget when switching to the footer or shutting down", async () => {
@@ -265,9 +267,9 @@ test("creates a new component after session shutdown without retaining old UI ca
 	const h = createHarness();
 	h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
 	h.handlers.get("session_shutdown")({}, h.ctx);
-	assert.equal(h.widgets.has("throughput"), false);
+	assert.equal(h.widgets.has("tps-stats"), false);
 	h.handlers.get("session_start")({}, h.ctx);
-	assert.equal(h.widgets.has("throughput"), true, "the new session mounts its own component");
+	assert.equal(h.widgets.has("tps-stats"), true, "the new session mounts its own component");
 	h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
 	assert.match(h.view.widget[0], /^TPS /);
 	assert.equal(h.widgetCalls.filter((call) => typeof call.content === "function").length, 2);
@@ -509,7 +511,7 @@ test("keeps a stable final summary through display-mode changes", async () => {
 		assert.equal(view.widget, undefined, "reset clears an idle final summary");
 		await commands.get("tps").handler("reset", ctx);
 		assert.equal(view.widget, undefined, "idle reset does not create a phantom stream");
-		assert.equal(view.notifications.at(-1).message, "No throughput metrics to reset");
+		assert.equal(view.notifications.at(-1).message, "No tps-stats metrics to reset");
 	});
 });
 
@@ -877,7 +879,7 @@ test("a bare /tps opens a menu with every action instead of toggling", async () 
 		"each option carries a description",
 	);
 	assert.equal(h.view.notifications.length, 0, "nothing was toggled or announced");
-	assert.deepEqual([...h.widgets.keys()], ["throughput"], "the widget is still mounted");
+	assert.deepEqual([...h.widgets.keys()], ["tps-stats"], "the widget is still mounted");
 });
 
 test("cancelling the menu changes nothing", async () => {
@@ -885,7 +887,7 @@ test("cancelling the menu changes nothing", async () => {
 	h.selections.push(undefined);
 	await h.commands.get("tps").handler("   ", h.ctx);
 	assert.equal(h.view.notifications.length, 0);
-	assert.deepEqual([...h.widgets.keys()], ["throughput"]);
+	assert.deepEqual([...h.widgets.keys()], ["tps-stats"]);
 });
 
 test("the chosen menu entry runs that action", async () => {
@@ -902,7 +904,7 @@ test("the chosen menu entry runs that action", async () => {
 		assert.equal(h.selectCalls.at(-1).title, "TPS · off");
 		h.selections.push("widget");
 		await h.commands.get("tps").handler("", h.ctx);
-		assert.ok(h.widgets.has("throughput"));
+		assert.ok(h.widgets.has("tps-stats"));
 		h.selections.push("stats");
 		const open = h.commands.get("tps").handler("", h.ctx);
 		await Promise.resolve();
@@ -939,7 +941,7 @@ test("without a UI a bare /tps keeps toggling and never opens a menu", async () 
 	const h = createHarness({ mode: "print", hasUI: false });
 	await h.commands.get("tps").handler("", h.ctx);
 	assert.equal(h.selectCalls.length, 0);
-	assert.equal(h.view.notifications.at(-1).message, "Live throughput: off");
+	assert.equal(h.view.notifications.at(-1).message, "tps-stats: off");
 });
 
 // Let queued promise callbacks (a closed panel, a rejected open) run.
@@ -1036,4 +1038,22 @@ test("a failing panel does not leave the click handler stuck", async () => {
 		assert.equal(h.panels.length, 1, "the next click works");
 		h.panels[0].component.handleInput("q");
 	});
+});
+
+test("the source carries no trace of the original name: keys, messages and comments say tps-stats", () => {
+	const dir = join(import.meta.dirname, "..", "src");
+	for (const file of readdirSync(dir)) {
+		assert.doesNotMatch(readFileSync(join(dir, file), "utf8"), /throughput/i, `src/${file}`);
+	}
+});
+
+test("the user-facing messages are labelled tps-stats", async () => {
+	const h = createHarness();
+	await h.commands.get("tps").handler("off", h.ctx);
+	await h.commands.get("tps").handler("on", h.ctx);
+	await h.commands.get("tps").handler("reset", h.ctx);
+	assert.deepEqual(
+		h.view.notifications.map((entry) => entry.message),
+		["tps-stats: off", "tps-stats: widget", "No tps-stats metrics to reset"],
+	);
 });
