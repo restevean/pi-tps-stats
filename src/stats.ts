@@ -112,6 +112,9 @@ const REF_CHAR = "┄";
 const AXIS_WIDTH = 6;
 // Reference lines stop four columns before the border: this plus the one padding column.
 const RIGHT_MARGIN = 3;
+// The two border columns, and one padding column inside each border.
+const FRAME_COLUMNS = 2;
+const PADDING_COLUMNS = 2;
 const MIN_FRAMED_WIDTH = 20;
 
 /** Bars are `BAR_WIDTH` columns wide with `BAR_GAP` between them; only the newest that fit are drawn. */
@@ -119,6 +122,16 @@ export function fitBars(count: number, width: number): { barWidth: number; shown
 	const room = Math.max(0, Math.floor(width));
 	const fits = Math.floor((room + BAR_GAP) / (BAR_WIDTH + BAR_GAP));
 	return { barWidth: BAR_WIDTH, shown: Math.min(count, fits) };
+}
+
+/**
+ * The narrowest framed panel that draws `bars` bars: the frame and its padding, the value
+ * axis, the right margin, and the bars with the gaps between them. The panel's configured
+ * minimum width is derived from here so it cannot drift away from what actually fits.
+ */
+export function minimumPanelWidth(bars: number): number {
+	const body = bars * BAR_WIDTH + Math.max(0, bars - 1) * BAR_GAP;
+	return FRAME_COLUMNS + PADDING_COLUMNS + AXIS_WIDTH + RIGHT_MARGIN + body;
 }
 
 /**
@@ -172,8 +185,8 @@ export function renderStatsPanel(
 	const summary = summarize(samples);
 	if (!summary) return [];
 	const clip = (line: string): string => truncateToWidth(line, Math.max(0, width), "");
-	const inner = width - 2;
-	const content = inner - 2;
+	const inner = width - FRAME_COLUMNS;
+	const content = inner - PADDING_COLUMNS;
 	const title = `✿ TPS stats · ${String(summary.count)} ${summary.count === 1 ? "response" : "responses"}`;
 
 	// TPS and cache read have a graph, so their numbers live in that graph's header; cache

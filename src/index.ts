@@ -15,7 +15,7 @@
 
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { formatRate, renderStatsPanel, type PanelStyle, type ResponseSample } from "./stats.ts";
+import { formatRate, minimumPanelWidth, renderStatsPanel, type PanelStyle, type ResponseSample } from "./stats.ts";
 
 const WIDGET_KEY = "tps-stats";
 const STATUS_KEY = "tps-stats";
@@ -26,6 +26,9 @@ const WINDOW_MS = 3000;
 const UPDATE_INTERVAL_MS = 200;
 const CHARS_PER_TOKEN = 4;
 const MEASUREMENT_MIN_TOKENS = 2;
+// The stats panel floor: room for fifteen bars. The width is derived from the bar geometry
+// in stats.ts, so it cannot drift from what the panel actually draws.
+const PANEL_BARS = 15;
 
 type DisplayMode = "widget" | "status";
 
@@ -420,11 +423,18 @@ export default function (pi: ExtensionAPI): void {
 		const elapsedSec = (now - measurementStart) / 1000;
 		const generationSeconds = Math.max(elapsedSec, 0.001);
 		const averageRate = measuredTokens / generationSeconds;
-		// Less than one measured token is not a speed measurement: an aborted or failed
-		// message, or a /tps reset after which no more output arrived (including the
-		// fraction an estimated baseline can leave), would pull the minimum down and
-		// dilute the averages. The widget line still shows that final window.
-		if (measuredTokens >= 1) {
+		// Two filters keep the statistics comparable. Less than one measured token is not a
+		// speed measurement: an empty message, or a /tps reset after which no more output
+		// arrived (including the fraction an estimated baseline can leave), would pull the
+		// minimum down and dilute the averages. And a response Pi reports as aborted or failed
+		// is left out: a fragment of a rate curve is not a comparable sample. Every other
+		// reason in pi-ai's StopReason union is counted: "stop", "length", "toolUse",
+		// "pending" and "deferred" (the token filter above drops one that carries no output),
+		// and so is a reason missing from the union, rather than silently emptying the
+		// statistics.
+		// The widget line still shows that final window either way.
+		const abortedOrFailed = event.message.stopReason === "aborted" || event.message.stopReason === "error";
+		if (measuredTokens >= 1 && !abortedOrFailed) {
 			sessionTokens += measuredTokens;
 			sessionSeconds += generationSeconds;
 			samples.push({
@@ -505,7 +515,15 @@ export default function (pi: ExtensionAPI): void {
 				};
 			},
 			// Centered like the Claude usage panel, at about a third of its width.
-			{ overlay: true, overlayOptions: { width: "26.25%", minWidth: 56, maxHeight: "90%", anchor: "center" } },
+			{
+				overlay: true,
+				overlayOptions: {
+					width: "26.25%",
+					minWidth: minimumPanelWidth(PANEL_BARS),
+					maxHeight: "90%",
+					anchor: "center",
+				},
+			},
 		);
 	};
 

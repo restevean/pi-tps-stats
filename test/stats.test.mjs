@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { barChart, fitBars, refRow, renderStatsPanel, summarize } from "../src/stats.ts";
+import { barChart, fitBars, minimumPanelWidth, refRow, renderStatsPanel, summarize } from "../src/stats.ts";
 
 // 100 tok in 1 s (80% cache read, 10% write) and 100 tok in 4 s (50% read, 0% write).
 const samples = [
@@ -33,6 +33,26 @@ test("every bar is two columns wide with one column between bars; only the newes
 	assert.deepEqual(fitBars(5, 1), { barWidth: 2, shown: 0 }, "a bar that does not fit whole is not drawn");
 	assert.deepEqual(fitBars(5, 2), { barWidth: 2, shown: 1 });
 	assert.deepEqual(fitBars(0, 40), { barWidth: 2, shown: 0 });
+});
+
+test("derives the narrowest panel width that draws a given number of bars", () => {
+	assert.equal(minimumPanelWidth(14), 54, "the first width that draws 14 bars");
+	assert.equal(minimumPanelWidth(15), 57, "the first width that draws 15 bars");
+});
+
+test("the width that draws 15 bars is exactly one column past the width that draws only 14", () => {
+	const many = Array.from({ length: 20 }, (_, index) => ({
+		tps: 100 + index,
+		tokens: 100,
+		seconds: 1,
+		input: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+	}));
+	const scope = (width) => renderStatsPanel(many, width).find((line) => line.includes("bars:"));
+	const fifteen = minimumPanelWidth(15);
+	assert.ok(scope(fifteen - 1)?.includes("last 14 of 20"), scope(fifteen - 1));
+	assert.ok(scope(fifteen)?.includes("last 15 of 20"), scope(fifteen));
 });
 
 test("draws multi-row bars scaled to the maximum, oldest first, with a gap between bars", () => {
@@ -186,9 +206,9 @@ test("keeps the cache write line below the cache read graph, after one blank row
 	assert.equal(lines.filter((line) => line.includes("cache write")).length, 1);
 });
 
-test("the full cache header fits at the narrowest overlay width, even at 100%", () => {
+test("the full cache header fits at the narrowest panel width, even at 100%", () => {
 	const full = [{ tps: 10, tokens: 10, seconds: 1, input: 0, cacheRead: 1000, cacheWrite: 0 }];
-	for (const width of [56, 80]) {
+	for (const width of [minimumPanelWidth(15), 80]) {
 		const text = renderStatsPanel(full, width).join("\n");
 		assert.ok(text.includes("cache read %  avg 100.0%  ┄ max 100.0%  ┄ min 100.0%"), `${width}: header truncated`);
 	}

@@ -87,16 +87,21 @@ necessarily the whole response time.
 ## Session statistics
 
 You can also open the panel by **clicking the TPS line** (a left click on the data
-row, not on the blank row under it). This needs the terminal UI in fullscreen mode,
-Pi's default, because regular mode leaves the mouse to the terminal and sends no
-clicks to extensions; `/tps stats` always works. A click while the panel is open does nothing,
-and a click before the first response finishes only reports that there is no data.
+row, not on the blank row under it). The click is a widget capability: it is a mouse
+event on the widget row, so in status mode, or while the display is off, there is no
+row to click. It needs the terminal UI in fullscreen mode, Pi's default, because
+regular mode leaves the mouse to the terminal and sends no clicks to extensions;
+`/tps stats` always works. A click while the panel is open does nothing. There is
+nothing to click while the line is not drawn: before the first response starts, and
+after `/tps reset` has cleared a final summary. While the line is drawn, a click opens
+the panel, or reports that there is no data when no response has been recorded in the
+statistics yet (aborted, failed and empty responses are not recorded).
 
 `/tps stats` opens a framed panel, centered on the screen like the Claude usage
 panel. Close it with Esc, `q` or Ctrl+C, or with any key you bound to cancel. It is
-narrow: 26.25% of the terminal, at least 56 columns. It has one entry per completed
-assistant message that produced output since the session started. Aborted or empty
-messages, and messages left with less than one token after a `/tps reset`, are
+narrow: 26.25% of the terminal, at least 57 columns. It has one entry per completed
+assistant message that produced output since the session started. Aborted, failed or
+empty messages, and messages left with less than one token after a `/tps reset`, are
 skipped, and are also left out of the `avg` on the widget line. The panel contains:
 
 - Two compact bar graphs with a value axis, one for TPS and one for cache read %,

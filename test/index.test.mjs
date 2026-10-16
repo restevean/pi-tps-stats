@@ -116,12 +116,14 @@ function assistantMessage({
 	output = 0,
 	cacheRead = 0,
 	cacheWrite = 0,
+	stopReason = "stop",
 } = {}) {
 	return {
 		role: "assistant",
 		model,
 		responseModel,
 		usage: { input, output, cacheRead, cacheWrite },
+		stopReason,
 	};
 }
 
@@ -815,7 +817,7 @@ test("/tps stats opens a panel with the session statistics and closes with Esc",
 		);
 		assert.deepEqual(h.panels[0].options, {
 			overlay: true,
-			overlayOptions: { width: "26.25%", minWidth: 56, maxHeight: "90%", anchor: "center" },
+			overlayOptions: { width: "26.25%", minWidth: 57, maxHeight: "90%", anchor: "center" },
 		});
 		for (const role of ["border", "customMessageLabel", "accent", "dim"]) {
 			assert.ok(h.themeRoles.has(role), `uses the theme ${role} token`);
@@ -870,6 +872,90 @@ test("messages without output tokens are not statistics samples", async () => {
 });
 
 const pick = (h, name) => h.selectCalls.at(-1).options.find((option) => option.startsWith(name));
+
+test("an aborted response is not a statistics sample", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		await respond(h, setNow, 3000, 4000, { output: 100 });
+		await respond(h, setNow, 5000, 6500, { output: 450, stopReason: "aborted" });
+		const open = h.commands.get("tps").handler("stats", h.ctx);
+		const text = h.panels[0].component.render(80).join("\n");
+		assert.ok(text.includes("2 responses"), text);
+		assert.ok(text.includes("min 100"), "an aborted fragment does not pull the minimum down");
+		h.panels[0].component.handleInput("\u001b");
+		await open;
+		assert.match(h.view.widget[0], /avg 100 tok\/s/, "an aborted fragment does not dilute the session average");
+		assert.match(h.view.widget[0], /out 450/, "the line still reports what the aborted response produced");
+	});
+});
+
+test("a response that ended with a provider error is not a statistics sample", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		await respond(h, setNow, 3000, 4000, { output: 300, stopReason: "error" });
+		const open = h.commands.get("tps").handler("stats", h.ctx);
+		const text = h.panels[0].component.render(80).join("\n");
+		assert.ok(text.includes("1 response"), text);
+		h.panels[0].component.handleInput("\u001b");
+		await open;
+		assert.match(h.view.widget[0], /avg 100 tok\/s/, "a failed response is not a completed measurement");
+	});
+});
+
+test("a response that carries no stop reason is still a statistics sample", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		// A minimal message, like the one an unexpected host shape could produce.
+		const message = {
+			role: "assistant",
+			model: "test-model",
+			usage: { input: 0, output: 100, cacheRead: 0, cacheWrite: 0 },
+		};
+		setNow(1000);
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		setNow(2000);
+		h.handlers.get("message_end")({ message }, h.ctx);
+		const open = h.commands.get("tps").handler("stats", h.ctx);
+		const text = h.panels[0].component.render(80).join("\n");
+		assert.ok(text.includes("1 response"), text);
+		h.panels[0].component.handleInput("\u001b");
+		await open;
+		assert.match(
+			h.view.widget[0],
+			/avg 100 tok\/s/,
+			"an unrecognised end is counted rather than dropping the statistics",
+		);
+	});
+});
+
+test("a response cut off at the output token limit is a statistics sample", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100, stopReason: "length" });
+		const open = h.commands.get("tps").handler("stats", h.ctx);
+		const text = h.panels[0].component.render(80).join("\n");
+		assert.ok(text.includes("1 response"), text);
+		h.panels[0].component.handleInput("\u001b");
+		await open;
+		assert.match(h.view.widget[0], /avg 100 tok\/s/, "a truncated response is a real measurement");
+	});
+});
+
+test("a response that ended to call a tool is a statistics sample", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100, stopReason: "toolUse" });
+		await respond(h, setNow, 3000, 4000, { output: 100, stopReason: "stop" });
+		const open = h.commands.get("tps").handler("stats", h.ctx);
+		const text = h.panels[0].component.render(80).join("\n");
+		assert.ok(text.includes("2 responses"), text);
+		h.panels[0].component.handleInput("\u001b");
+		await open;
+		assert.match(h.view.widget[0], /avg 100 tok\/s/, "a tool-calling turn counts like any other");
+	});
+});
 
 test("a bare /tps opens a menu with every action instead of acting on its own", async () => {
 	const h = createHarness();
@@ -1020,7 +1106,7 @@ test("only a left click on the data row opens the panel", async () => {
 	});
 });
 
-test("clicking before there is anything to show does nothing", () => {
+test("clicking before the first response starts does nothing, because no line is drawn yet", () => {
 	const h = createHarness();
 	assert.deepEqual(h.renderAtWidth(80), [], "the widget is mounted but empty");
 	assert.equal(h.mouse(click()), undefined);
@@ -1034,6 +1120,31 @@ test("a click while a response streams with no finished response says there is n
 	assert.equal(h.mouse(click())?.handled, true);
 	assert.equal(h.panels.length, 0);
 	assert.equal(h.view.notifications.at(-1).message, "No completed responses yet");
+});
+
+test("a click after an aborted first response says there is no data, though the line is drawn", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100, stopReason: "aborted" });
+		assert.match(h.view.widget[0], /^TPS 100 tok\/s/, "the final line of the aborted response is shown");
+		assert.equal(h.mouse(click())?.handled, true);
+		assert.equal(h.panels.length, 0, "no sample was recorded, so there is nothing to graph");
+		assert.equal(h.view.notifications.at(-1).message, "No completed responses yet");
+	});
+});
+
+test("after /tps reset clears the final summary there is no line to click, though samples remain", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		await h.commands.get("tps").handler("reset", h.ctx);
+		assert.equal(h.widgets.size, 0, "the line is gone, so there is no component left to receive a click");
+		assert.equal(h.panels.length, 0);
+		const open = h.commands.get("tps").handler("stats", h.ctx);
+		assert.equal(h.panels.length, 1, "the recorded sample is still there for /tps stats");
+		h.panels[0].component.handleInput("\u001b");
+		await open;
+	});
 });
 
 test("a second click while the panel is open does not open another one, and it reopens after closing", async () => {
