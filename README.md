@@ -146,10 +146,10 @@ approximate prompt rate are no longer displayed.
 Install a released version, pinned to its tag:
 
 ```bash
-pi install git:github.com/restevean/pi-tps-stats@v0.0.1
+pi install git:github.com/restevean/pi-tps-stats@v0.0.2
 ```
 
-Without the `@v0.0.1` suffix Pi follows the latest `main`, which can change.
+Without the `@v0.0.2` suffix Pi follows the latest `main`, which can change.
 
 Or install a local checkout:
 
