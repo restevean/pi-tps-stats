@@ -217,7 +217,8 @@ and do not load the npm version alongside the local copy.
 ## License
 
 Released under the MIT License. The original copyright notice of Andreas
-Petersson is retained in [LICENSE](LICENSE), as the license requires.
+Petersson is retained in [LICENSE](LICENSE), as the license requires, followed by
+the notice for the modifications in this fork (restevean).
 
 [MIT](LICENSE)
 
