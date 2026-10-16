@@ -13,8 +13,9 @@
  * mode publishes the same line as the widget.
  */
 
-import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { Key, matchesKey, truncateToWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { formatRate, renderStatsPanel, type PanelStyle, type ResponseSample } from "./stats.ts";
 
 const WIDGET_KEY = "throughput";
 const STATUS_KEY = "throughput";
@@ -74,6 +75,12 @@ export default function (pi: ExtensionAPI): void {
 	let mode: DisplayMode = "widget";
 	let enabled = true;
 	let state: ThroughputState | undefined;
+	// Session totals over completed responses, weighted by time: total output tokens
+	// divided by total generation seconds (not a mean of per-response averages).
+	let sessionTokens = 0;
+	let sessionSeconds = 0;
+	// One entry per completed response, for /tps stats. Cleared with the session.
+	let samples: ResponseSample[] = [];
 	let ui: ExtensionUIContext | undefined;
 	let hasUI = false;
 	let pendingProviderRequestTime: number | undefined;
@@ -82,7 +89,7 @@ export default function (pi: ExtensionAPI): void {
 	let widgetContent = "";
 	let requestWidgetRender: (() => void) | undefined;
 
-	const fmtRate = (rate: number): string => (rate >= 100 ? rate.toFixed(0) : rate.toFixed(1));
+	const fmtRate = formatRate;
 	const estimatedTokens = (chars: number): number => chars / CHARS_PER_TOKEN;
 	const isFirstOutputEvent = (update: { type: string; delta?: string; content?: string }): boolean => {
 		switch (update.type) {
@@ -103,8 +110,14 @@ export default function (pi: ExtensionAPI): void {
 		}
 	};
 
+	const sessionRate = (extraTokens = 0, extraSeconds = 0): number => {
+		const seconds = sessionSeconds + extraSeconds;
+		return seconds > 0 ? (sessionTokens + extraTokens) / seconds : 0;
+	};
+
 	const widgetLine = (
 		rate: number,
+		averageRate: number,
 		output: number,
 		elapsedSec: number,
 		usage: PromptUsage,
@@ -115,7 +128,7 @@ export default function (pi: ExtensionAPI): void {
 		const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
 		const total = output + promptTokens;
 		const percent = (tokens: number): string => `${(promptTokens > 0 ? (tokens / promptTokens) * 100 : 0).toFixed(1)}%`;
-		return `TPS ${estimateMark}${fmtRate(rate)} tok/s. out ${estimateMark}${count(output)}, in ${count(usage.input)}, cache ${count(usage.cacheRead)}/${count(usage.cacheWrite)}, cache % ${percent(usage.cacheRead)}/${percent(usage.cacheWrite)}, total ${estimateMark}${count(total)}, ${elapsedSec.toFixed(1)}s`;
+		return `TPS ${estimateMark}${fmtRate(rate)} tok/s. avg ${fmtRate(averageRate)} tok/s, out ${estimateMark}${count(output)}, in ${count(usage.input)}, cache ${count(usage.cacheRead)}/${count(usage.cacheWrite)}, cache % ${percent(usage.cacheRead)}/${percent(usage.cacheWrite)}, total ${estimateMark}${count(total)}, ${elapsedSec.toFixed(1)}s`;
 	};
 
 	const clearWidget = (): void => {
@@ -159,6 +172,51 @@ export default function (pi: ExtensionAPI): void {
 		return true;
 	};
 
+	// Mounted as early as the session starts (empty, zero rows): Pi lays widgets out in
+	// registration order, and the host republishes its own banner later, so this
+	// keeps the TPS line ahead of it. Repainting never re-registers.
+	const ensureWidget = (): void => {
+		if (!ui || !hasUI || !enabled || mode !== "widget" || !customWidgets || widgetOwner) return;
+		const owner = {};
+		widgetOwner = owner;
+		ui.setWidget(
+			WIDGET_KEY,
+			(tui) => {
+				requestWidgetRender = () => {
+					tui.requestRender();
+				};
+				return {
+					// One blank row separates the TPS line from whatever the host draws below it.
+					render: (width) => (widgetContent ? [truncateToWidth(widgetContent, width), ""] : []),
+					invalidate() {
+						// Stateless: render() always reads the live content.
+					},
+					// Fullscreen mode routes clicks here; regular mode leaves the mouse to the terminal.
+					// Only a left click on the TPS row counts, not the blank row below it.
+					handleMouse(event: TuiMouseEvent) {
+						if (event.type !== "click" || event.button !== "left" || event.y !== 0 || !widgetContent) {
+							return undefined;
+						}
+						if (!panelOpen && ui) {
+							const target = ui;
+							showStats(target).catch(() => {
+								target.notify("Could not open the TPS panel", "warning");
+							});
+						}
+						return { handled: true };
+					},
+					dispose() {
+						if (widgetOwner !== owner) return;
+						widgetOwner = undefined;
+						widgetContent = "";
+						requestWidgetRender = undefined;
+					},
+				};
+			},
+			{ placement: "aboveEditor" },
+		);
+	};
+
 	const showLine = (line: string): void => {
 		if (!ui) return;
 		if (mode === "status") {
@@ -172,44 +230,21 @@ export default function (pi: ExtensionAPI): void {
 		widgetContent = `${THROUGHPUT_COLOR}${line}${RESET_FOREGROUND}`;
 		if (!customWidgets) {
 			// RPC supports string widgets, not terminal component factories.
-			ui.setWidget(WIDGET_KEY, [widgetContent], { placement: "belowEditor" });
+			ui.setWidget(WIDGET_KEY, [widgetContent, ""], { placement: "aboveEditor" });
 			return;
 		}
 		if (widgetOwner) {
 			requestWidgetRender?.();
 			return;
 		}
-
-		const owner = {};
-		widgetOwner = owner;
-		ui.setWidget(
-			WIDGET_KEY,
-			(tui) => {
-				requestWidgetRender = () => {
-					tui.requestRender();
-				};
-				return {
-					render: (width) => [truncateToWidth(widgetContent, width)],
-					invalidate() {
-						// Stateless: render() always reads the live content.
-					},
-					dispose() {
-						if (widgetOwner !== owner) return;
-						widgetOwner = undefined;
-						widgetContent = "";
-						requestWidgetRender = undefined;
-					},
-				};
-			},
-			{ placement: "belowEditor" },
-		);
+		ensureWidget();
 	};
 
 	const render = (): void => {
 		if (!state || !hasUI || !enabled) return;
 
 		if (state.kind === "final") {
-			showLine(widgetLine(state.averageRate, state.outputTokens, state.elapsedSec, state.usage));
+			showLine(widgetLine(state.averageRate, sessionRate(), state.outputTokens, state.elapsedSec, state.usage));
 			return;
 		}
 
@@ -218,18 +253,35 @@ export default function (pi: ExtensionAPI): void {
 		state.peakRate = Math.max(state.peakRate, live);
 		const elapsedSec = state.measurementStartTime === undefined ? 0 : (now - state.measurementStartTime) / 1000;
 		const outputTokens = liveOutputTokens(state);
-		showLine(widgetLine(live, outputTokens, elapsedSec, state.usage, !state.usesReportedUsage));
+		const measured = measuredOutputTokens(state, outputTokens);
+		showLine(
+			widgetLine(
+				live,
+				sessionRate(measured, elapsedSec),
+				outputTokens,
+				elapsedSec,
+				state.usage,
+				!state.usesReportedUsage,
+			),
+		);
 	};
 
 	pi.on("session_start", (_event, ctx) => {
 		ui = ctx.ui;
 		hasUI = ctx.hasUI;
 		customWidgets = ctx.mode === "tui";
+		sessionTokens = 0;
+		sessionSeconds = 0;
+		samples = [];
+		ensureWidget();
 	});
 
 	pi.on("session_shutdown", () => {
 		clearUi();
 		state = undefined;
+		sessionTokens = 0;
+		sessionSeconds = 0;
+		samples = [];
 		pendingProviderRequestTime = undefined;
 		ui = undefined;
 		hasUI = false;
@@ -339,6 +391,20 @@ export default function (pi: ExtensionAPI): void {
 		}
 		const elapsedSec = (now - measurementStart) / 1000;
 		const averageRate = measuredTokens / Math.max(elapsedSec, 0.001);
+		// An empty message (aborted or failed) is not a speed measurement: it would pull
+		// the minimum to 0 and dilute the averages.
+		if (outputTokens > 0) {
+			sessionTokens += measuredTokens;
+			sessionSeconds += Math.max(elapsedSec, 0.001);
+			samples.push({
+				tps: averageRate,
+				tokens: measuredTokens,
+				seconds: Math.max(elapsedSec, 0.001),
+				input: event.message.usage.input,
+				cacheRead: event.message.usage.cacheRead,
+				cacheWrite: event.message.usage.cacheWrite,
+			});
+		}
 		const peakRate = Math.max(stream.peakRate, rollingRate(stream, now), averageRate);
 		state = {
 			kind: "final",
@@ -352,69 +418,151 @@ export default function (pi: ExtensionAPI): void {
 		render();
 	});
 
+	// True while the panel is open, so a click on the line cannot stack a second one.
+	let panelOpen = false;
+
+	const showStats = async (panelUi: ExtensionUIContext): Promise<void> => {
+		if (samples.length === 0) {
+			panelUi.notify("No completed responses yet", "info");
+			return;
+		}
+		if (!customWidgets) {
+			panelUi.notify(renderStatsPanel(samples, 80).join("\n"), "info");
+			return;
+		}
+		const snapshot = [...samples];
+		panelOpen = true;
+		try {
+			await openPanel(panelUi, snapshot);
+		} finally {
+			panelOpen = false;
+		}
+	};
+
+	const openPanel = async (panelUi: ExtensionUIContext, snapshot: readonly ResponseSample[]): Promise<void> => {
+		await panelUi.custom<undefined>(
+			(tui, theme, _keybindings, done) => {
+				// Same tokens as the Claude usage panel; a theme without them falls back to plain text.
+				const themed = typeof (theme as { fg?: unknown } | undefined)?.fg === "function";
+				const fg = (role: string) => (text: string) => (themed ? theme.fg(role as never, text) : text);
+				const style: PanelStyle = {
+					frame: fg("border"),
+					title: fg("customMessageLabel"),
+					text: (text) => `${THROUGHPUT_COLOR}${text}${RESET_FOREGROUND}`,
+					key: fg("accent"),
+					keyText: fg("dim"),
+				};
+				// A short terminal gets shorter graphs so the centered panel still fits.
+				const rows = (tui as { terminal?: { rows?: number } }).terminal?.rows;
+				const graphHeight = typeof rows === "number" && rows < 26 ? 3 : undefined;
+				return {
+					render: (width) => renderStatsPanel(snapshot, width, style, graphHeight),
+					handleInput(data) {
+						if (matchesKey(data, Key.escape) || data === "q") done(undefined);
+					},
+					invalidate() {
+						// Stateless: render() always reads the snapshot.
+					},
+				};
+			},
+			// Centered like the Claude usage panel, at about a third of its width.
+			{ overlay: true, overlayOptions: { width: "26.25%", minWidth: 56, maxHeight: "90%", anchor: "center" } },
+		);
+	};
+
+	// Shown by a bare /tps. The label is "<action>  <description>"; the action is its first word.
+	const MENU: readonly (readonly [string, string])[] = [
+		["stats", "Statistics panel with graphs"],
+		["widget", "Line above the editor"],
+		["status", "Same line as a host status"],
+		["on", "Show the display"],
+		["off", "Hide the display"],
+		["reset", "Clear the summary or restart the measurement"],
+		["toggle", "Switch the display on or off"],
+	];
+	const MENU_LABELS = MENU.map(([action, description]) => `${action.padEnd(6)}  ${description}`);
+
+	/** The action chosen from the menu, "toggle" when there is no UI to ask, undefined if cancelled. */
+	const chooseAction = async (ctx: ExtensionCommandContext): Promise<string | undefined> => {
+		if (!ctx.hasUI) return "toggle";
+		const choice = await ctx.ui.select(`TPS · ${enabled ? mode : "off"}`, MENU_LABELS);
+		return choice?.split(/\s/)[0];
+	};
+
+	const run = (arg: string, ctx: ExtensionCommandContext): Promise<void> => {
+		if (arg === "toggle") {
+			enabled = !enabled;
+			if (enabled) {
+				ensureWidget();
+				render();
+			} else clearUi();
+			ctx.ui.notify(`Live throughput: ${enabled ? mode : "off"}`, "info");
+			return Promise.resolve();
+		}
+
+		switch (arg) {
+			case "on":
+				enabled = true;
+				ensureWidget();
+				render();
+				ctx.ui.notify(`Live throughput: ${mode}`, "info");
+				return Promise.resolve();
+			case "off":
+				enabled = false;
+				clearUi();
+				ctx.ui.notify("Live throughput: off", "info");
+				return Promise.resolve();
+			case "widget":
+			case "status":
+				if (mode !== arg) clearUi();
+				mode = arg;
+				enabled = true;
+				ensureWidget();
+				render();
+				ctx.ui.notify(`Live throughput: ${mode}`, "info");
+				return Promise.resolve();
+			case "stats":
+				return showStats(ctx.ui);
+			case "reset":
+				if (state?.kind === "streaming") {
+					const now = Date.now();
+					state.responseStartTime = now;
+					state.measurementStartTime = now;
+					state.measurementBaseline = 0;
+					state.providerOutputBaseline =
+						state.lastProviderOutput > 0
+							? state.lastProviderOutput
+							: state.providerOutputBaseline + estimatedTokens(state.totalChars);
+					state.totalChars = 0;
+					state.reportedOutputTokens = 0;
+					state.samples = [];
+					state.peakRate = 0;
+					state.lastRender = now;
+					render();
+					ctx.ui.notify("Current throughput metrics reset", "info");
+				} else if (state?.kind === "final") {
+					state = undefined;
+					clearUi();
+					ctx.ui.notify("Final throughput summary cleared", "info");
+				} else {
+					ctx.ui.notify("No throughput metrics to reset", "info");
+				}
+				return Promise.resolve();
+			default:
+				ctx.ui.notify("Usage: /tps [on|off|widget|status|stats|reset|toggle]", "error");
+				return Promise.resolve();
+		}
+	};
+
 	pi.registerCommand("tps", {
-		description: "Show TPS and token usage below the editor. Args: on|off|widget|status|reset",
-		handler: (args, ctx) => {
+		description: "Show TPS and token usage. Run it alone for a menu, or add: on|off|widget|status|stats|reset|toggle",
+		handler: async (args, ctx) => {
 			ui = ctx.ui;
 			hasUI = ctx.hasUI;
-			const arg = args.trim().toLowerCase();
-
-			if (!arg || arg === "toggle") {
-				enabled = !enabled;
-				if (enabled) render();
-				else clearUi();
-				ctx.ui.notify(`Live throughput: ${enabled ? mode : "off"}`, "info");
-				return Promise.resolve();
-			}
-
-			switch (arg) {
-				case "on":
-					enabled = true;
-					render();
-					ctx.ui.notify(`Live throughput: ${mode}`, "info");
-					return Promise.resolve();
-				case "off":
-					enabled = false;
-					clearUi();
-					ctx.ui.notify("Live throughput: off", "info");
-					return Promise.resolve();
-				case "widget":
-				case "status":
-					if (mode !== arg) clearUi();
-					mode = arg;
-					enabled = true;
-					render();
-					ctx.ui.notify(`Live throughput: ${mode}`, "info");
-					return Promise.resolve();
-				case "reset":
-					if (state?.kind === "streaming") {
-						const now = Date.now();
-						state.responseStartTime = now;
-						state.measurementStartTime = now;
-						state.measurementBaseline = 0;
-						state.providerOutputBaseline =
-							state.lastProviderOutput > 0
-								? state.lastProviderOutput
-								: state.providerOutputBaseline + estimatedTokens(state.totalChars);
-						state.totalChars = 0;
-						state.reportedOutputTokens = 0;
-						state.samples = [];
-						state.peakRate = 0;
-						state.lastRender = now;
-						render();
-						ctx.ui.notify("Current throughput metrics reset", "info");
-					} else if (state?.kind === "final") {
-						state = undefined;
-						clearUi();
-						ctx.ui.notify("Final throughput summary cleared", "info");
-					} else {
-						ctx.ui.notify("No throughput metrics to reset", "info");
-					}
-					return Promise.resolve();
-				default:
-					ctx.ui.notify("Usage: /tps [on|off|widget|status|reset|toggle]", "error");
-					return Promise.resolve();
-			}
+			const typed = args.trim().toLowerCase();
+			const arg = typed || (await chooseAction(ctx));
+			if (arg === undefined) return;
+			await run(arg, ctx);
 		},
 	});
 }
