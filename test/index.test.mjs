@@ -505,8 +505,8 @@ test("keeps a stable final summary through display-mode changes", async () => {
 
 		await commands.get("tps").handler("off", ctx);
 		assert.equal(view.status, undefined);
-		await commands.get("tps").handler("toggle", ctx);
-		assert.equal(view.status, finalWidget, "toggle restores the selected status mode");
+		await commands.get("tps").handler("on", ctx);
+		assert.equal(view.status, finalWidget, "on restores the selected status mode");
 
 		await commands.get("tps").handler("widget", ctx);
 		assert.deepEqual(view.widget, [finalWidget], "final values do not decay while idle");
@@ -871,18 +871,18 @@ test("messages without output tokens are not statistics samples", async () => {
 
 const pick = (h, name) => h.selectCalls.at(-1).options.find((option) => option.startsWith(name));
 
-test("a bare /tps opens a menu with every action instead of toggling", async () => {
+test("a bare /tps opens a menu with every action instead of acting on its own", async () => {
 	const h = createHarness();
 	await h.commands.get("tps").handler("", h.ctx);
 	assert.equal(h.selectCalls.length, 1);
 	assert.equal(h.selectCalls[0].title, "TPS · widget");
 	const names = h.selectCalls[0].options.map((option) => option.split(/\s/)[0]);
-	assert.deepEqual(names, ["stats", "widget", "status", "on", "off", "reset", "toggle"]);
+	assert.deepEqual(names, ["stats", "widget", "status", "on", "off", "reset"]);
 	assert.ok(
 		h.selectCalls[0].options.every((option) => option.includes("  ")),
 		"each option carries a description",
 	);
-	assert.equal(h.view.notifications.length, 0, "nothing was toggled or announced");
+	assert.equal(h.view.notifications.length, 0, "nothing ran and nothing was announced");
 	assert.deepEqual([...h.widgets.keys()], ["tps-stats"], "the widget is still mounted");
 });
 
@@ -930,22 +930,45 @@ test("the menu entries are the full option labels returned by select", async () 
 	assert.equal(h.widgets.size, 0, "a full label, not only its first word, selects the action");
 });
 
-test("an explicit argument skips the menu, and toggle still toggles", async () => {
+test("an explicit argument skips the menu, and a removed action is refused", async () => {
 	const h = createHarness();
-	await h.commands.get("tps").handler("toggle", h.ctx);
+	await h.commands.get("tps").handler("on", h.ctx);
 	assert.equal(h.selectCalls.length, 0);
-	assert.equal(h.widgets.size, 0);
+	const notifications = h.view.notifications.length;
 	await h.commands.get("tps").handler("toggle", h.ctx);
-	assert.equal(h.widgets.size, 1);
+	assert.equal(h.selectCalls.length, 0, "an argument never falls back to the menu");
+	assert.equal(h.view.notifications.length, notifications + 1, "the refused action reports once");
+	assert.equal(
+		h.view.notifications.at(-1).message,
+		"Usage: /tps [stats|widget|status|on|off|reset]",
+		"a removed action names the supported ones",
+	);
+	assert.equal(h.view.notifications.at(-1).type, "error");
+	assert.deepEqual([...h.widgets.keys()], ["tps-stats"], "a refused action leaves the display untouched");
 	await h.commands.get("tps").handler("status", h.ctx);
-	assert.equal(h.selectCalls.length, 0);
+	assert.equal(h.selectCalls.length, 0, "a supported argument still runs directly");
 });
 
-test("without a UI a bare /tps keeps toggling and never opens a menu", async () => {
+test("the menu, the usage message and the command help list the same actions in the same order", async () => {
+	const h = createHarness();
+	await h.commands.get("tps").handler("", h.ctx);
+	const menuActions = h.selectCalls[0].options.map((option) => option.split(/\s/)[0]);
+	h.selections.push(undefined);
+	await h.commands.get("tps").handler("bogus", h.ctx);
+	const usage = h.view.notifications.at(-1).message;
+	const listed = usage.slice(usage.indexOf("[") + 1, usage.lastIndexOf("]")).split("|");
+	assert.deepEqual(listed, menuActions, "the refusal names exactly the menu actions, in menu order");
+	assert.ok(h.commands.get("tps").description.endsWith(listed.join("|")), "the command help ends with the same list");
+});
+
+test("without a UI a bare /tps never opens a menu and reports the usage", async () => {
 	const h = createHarness({ mode: "print", hasUI: false });
 	await h.commands.get("tps").handler("", h.ctx);
 	assert.equal(h.selectCalls.length, 0);
-	assert.equal(h.view.notifications.at(-1).message, "tps-stats: off");
+	assert.equal(h.view.notifications.length, 1, "the usage is the only report");
+	assert.equal(h.view.notifications[0].message, "Usage: /tps [stats|widget|status|on|off|reset]");
+	assert.equal(h.view.notifications[0].type, "error");
+	assert.equal(h.widgets.size, 0, "a refused bare /tps mounts nothing");
 });
 
 // Let queued promise callbacks (a closed panel, a rejected open) run.

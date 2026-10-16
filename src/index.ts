@@ -517,28 +517,21 @@ export default function (pi: ExtensionAPI): void {
 		["on", "Show the display"],
 		["off", "Hide the display"],
 		["reset", "Clear the summary or restart the measurement"],
-		["toggle", "Switch the display on or off"],
 	];
 	const MENU_LABELS = MENU.map(([action, description]) => `${action.padEnd(6)}  ${description}`);
+	// One action list feeds all three renderings: the menu labels, the usage message and the command help.
+	const ACTIONS = MENU.map(([action]) => action).join("|");
 
-	/** The action chosen from the menu, "toggle" when there is no UI to ask, undefined if cancelled. */
+	/** Reported for an unknown argument, and for a bare /tps with no UI to ask with. */
+	const USAGE = `Usage: /tps [${ACTIONS}]`;
+
+	/** The action chosen from the menu, undefined if cancelled. */
 	const chooseAction = async (ctx: ExtensionCommandContext): Promise<string | undefined> => {
-		if (!ctx.hasUI) return "toggle";
 		const choice = await ctx.ui.select(`TPS · ${enabled ? mode : "off"}`, MENU_LABELS);
 		return choice?.split(/\s/)[0];
 	};
 
 	const run = (arg: string, ctx: ExtensionCommandContext): Promise<void> => {
-		if (arg === "toggle") {
-			enabled = !enabled;
-			if (enabled) {
-				ensureWidget();
-				render();
-			} else clearUi();
-			ctx.ui.notify(`tps-stats: ${enabled ? mode : "off"}`, "info");
-			return Promise.resolve();
-		}
-
 		switch (arg) {
 			case "on":
 				enabled = true;
@@ -588,17 +581,22 @@ export default function (pi: ExtensionAPI): void {
 				}
 				return Promise.resolve();
 			default:
-				ctx.ui.notify("Usage: /tps [on|off|widget|status|stats|reset|toggle]", "error");
+				ctx.ui.notify(USAGE, "error");
 				return Promise.resolve();
 		}
 	};
 
 	pi.registerCommand("tps", {
-		description: "Show TPS and token usage. Run it alone for a menu, or add: on|off|widget|status|stats|reset|toggle",
+		description: `Show TPS and token usage. Run it alone for a menu, or add: ${ACTIONS}`,
 		handler: async (args, ctx) => {
 			ui = ctx.ui;
 			hasUI = ctx.hasUI;
 			const typed = args.trim().toLowerCase();
+			// With no UI there is no menu to ask with, so a bare /tps must not guess an action.
+			if (!typed && !ctx.hasUI) {
+				ctx.ui.notify(USAGE, "error");
+				return;
+			}
 			const arg = typed || (await chooseAction(ctx));
 			if (arg === undefined) return;
 			await run(arg, ctx);

@@ -174,7 +174,8 @@ extension.
 
 Run `/tps` on its own to open a menu: move with the arrow keys, pick an action
 with Enter, or leave with Esc (nothing changes). Without a terminal UI (print
-mode) a bare `/tps` still toggles the display, since there is nothing to ask.
+mode) there is nothing to ask, so a bare `/tps` reports the usage instead and
+changes nothing.
 
 The persistent `#7E86AE` widget is enabled above the prompt editor by default.
 After reloading the local extension, use `/tps widget` to try it, or
@@ -183,7 +184,6 @@ After reloading the local extension, use `/tps widget` to try it, or
 | Command       | Effect                                                 |
 | ------------- | ------------------------------------------------------ |
 | `/tps`        | Open a menu of the actions below (arrows, Enter, Esc)  |
-| `/tps toggle` | Toggle the display on or off                           |
 | `/tps on`     | Enable the previously selected display mode            |
 | `/tps off`    | Hide the display                                       |
 | `/tps widget` | Enable the persistent widget above the editor          |
