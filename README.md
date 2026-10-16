@@ -100,9 +100,9 @@ empty messages are skipped, and also left out of the `avg` on the widget line):
 - Two compact bar graphs with a value axis, one for TPS and one for cache read %,
   drawn oldest to newest. Each message is a bar two columns wide, one blank column apart, and the bars
   are six rows tall; when there are more messages than fit, only the newest are
-  drawn, and on a short terminal (under 28 rows) the graphs shrink to three rows. Each graph header carries
-  its average, then its maximum and minimum (there is no separate TPS summary row). Two blank rows separate the title
-  from the first graph, followed by a scope line and one more blank row.
+  drawn, and on a short terminal (under 27 rows) the graphs shrink to three rows. Each graph header carries
+  its average, then its maximum and minimum (there is no separate TPS summary row). A blank row separates the title
+  from the scope line, and another one the scope line from the first graph.
 - **Cache write %**: average, maximum and minimum (the same order as the graph
   headers) on a line below the cache read graph, after one blank row; it has no graph of its
   own.

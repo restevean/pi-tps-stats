@@ -1063,7 +1063,7 @@ test("the user-facing messages are labelled tps-stats", async () => {
 test("a short terminal shrinks the graphs so the centered panel still fits in 90% of the height", async () => {
 	await withFakeClock(async (setNow) => {
 		const heights = [];
-		for (const rows of [27, 28]) {
+		for (const rows of [26, 27]) {
 			const h = createHarness();
 			h.tui.terminal.rows = rows;
 			await respond(h, setNow, 1000, 2000, { output: 100 });
@@ -1072,6 +1072,6 @@ test("a short terminal shrinks the graphs so the centered panel still fits in 90
 			h.panels[0].component.handleInput("q");
 			await open;
 		}
-		assert.deepEqual(heights, [19, 25], "27 rows get 3-row graphs; 28 rows (25 / 0.9) get the full panel");
+		assert.deepEqual(heights, [18, 24], "26 rows get 3-row graphs; 27 rows (24 / 0.9) get the full panel");
 	});
 });

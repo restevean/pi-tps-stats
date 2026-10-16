@@ -220,7 +220,6 @@ export function renderStatsPanel(
 	const visibleTpsMax = Math.max(0, ...samples.slice(-shown).map((sample) => sample.tps));
 	const bodyLines = [
 		"",
-		"",
 		scope,
 		"",
 		...graph(

@@ -84,12 +84,8 @@ test("the graphs use two-column bars, one blank column apart, and six rows", () 
 	const baseline = lines.find((line) => line.includes("   0 │"));
 	const bars = baseline.split("   0 │")[1].replace(/ │$/, "").trimEnd();
 	assert.equal(bars, "██ ██ ██ ██ ██", "five responses: five 2-column bars separated by one column");
-	assert.equal(
-		lines.length,
-		25,
-		"frame + two blank + scope + blank + two graphs of six rows + blank + cache write row",
-	);
-	assert.equal(renderStatsPanel(samples, 80, undefined, 3).length, 19, "a short terminal can ask for three rows");
+	assert.equal(lines.length, 24, "frame + blank + scope + blank + two graphs of six rows + blank + cache write row");
+	assert.equal(renderStatsPanel(samples, 80, undefined, 3).length, 18, "a short terminal can ask for three rows");
 });
 
 test("finds the row of a reference value, counting from the top", () => {
@@ -222,11 +218,10 @@ test("there is no TPS summary row: the panel opens with the TPS graph header", (
 	assert.ok(!lines.some((line) => /^│ TPS\s+min/.test(line)), "no 'TPS  min .. max .. avg .. tok/s' row");
 	assert.ok(!lines.join("\n").includes("tok/s  "), "no row with the tok/s unit");
 	const blank = `│${" ".repeat(78)}│`;
-	assert.equal(lines[1], blank, "a blank row under the title");
-	assert.equal(lines[2], blank, "and a second one");
-	assert.ok(lines[3].includes("Stats and bars: whole session"), "the scope line follows the two blank rows");
-	assert.equal(lines[4], blank, "one blank row below the scope line");
-	assert.ok(lines[5].includes("TPS (tok/s)  avg 40.0  ┄ max 100  ┄ min 25.0"), lines[5]);
+	assert.equal(lines[1], blank, "one blank row under the title");
+	assert.ok(lines[2].includes("Stats and bars: whole session"), "the scope line follows the blank row");
+	assert.equal(lines[3], blank, "one blank row below the scope line");
+	assert.ok(lines[4].includes("TPS (tok/s)  avg 40.0  ┄ max 100  ┄ min 25.0"), lines[4]);
 });
 
 const many = (count) =>
