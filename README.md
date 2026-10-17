@@ -130,6 +130,10 @@ tallest visible bar, so they use the full height. The header still shows the ses
 visible scale, so a record from an older response that is no longer drawn has no line.
 The cache read graph is a percentage and always spans 0 to 100.
 
+The axis labels of both graphs share one gutter, four columns wide, that grows when the
+top TPS label is longer, as with a peak of `13550`. The axis stays one straight line, and
+the extra columns come out of the bars.
+
 Minimum and maximum are per message. Averages are weighted: TPS is total output
 tokens over total generation time, and cache % is total cache tokens over total
 prompt tokens (`input + cacheRead + cacheWrite`), not a mean of percentages. The

@@ -109,7 +109,10 @@ const BAR_WIDTH = 2;
 const BAR_GAP = 1;
 const GRAPH_HEIGHT = 6;
 const REF_CHAR = "┄";
-const AXIS_WIDTH = 6;
+// The value axis is a label gutter followed by " │". The gutter is at least this wide and grows to
+// fit the widest label, so the axis stays one straight line.
+const AXIS_LABEL_MIN = 4;
+const AXIS_SEPARATOR = 2;
 // Reference lines stop four columns before the border: this plus the one padding column.
 const RIGHT_MARGIN = 3;
 // The two border columns, and one padding column inside each border.
@@ -126,12 +129,13 @@ export function fitBars(count: number, width: number): { barWidth: number; shown
 
 /**
  * The narrowest framed panel that draws `bars` bars: the frame and its padding, the value
- * axis, the right margin, and the bars with the gaps between them. The panel's configured
- * minimum width is derived from here so it cannot drift away from what actually fits.
+ * axis with its usual label gutter, the right margin, and the bars with the gaps between
+ * them. The panel's configured minimum width is derived from here so it cannot drift away
+ * from what actually fits. A wider axis label takes its extra columns from the bars.
  */
 export function minimumPanelWidth(bars: number): number {
 	const body = bars * BAR_WIDTH + Math.max(0, bars - 1) * BAR_GAP;
-	return FRAME_COLUMNS + PADDING_COLUMNS + AXIS_WIDTH + RIGHT_MARGIN + body;
+	return FRAME_COLUMNS + PADDING_COLUMNS + AXIS_LABEL_MIN + AXIS_SEPARATOR + RIGHT_MARGIN + body;
 }
 
 /**
@@ -195,11 +199,22 @@ export function renderStatsPanel(
 	const cw = summary.cacheWrite;
 	const cacheWriteLine = `${"cache write".padEnd(LABEL_WIDTH)}  avg ${percent(cw.avg)}  max ${percent(cw.max)}  min ${percent(cw.min)}`;
 
+	// The newest `count` items. Not slice(-count): slice(-0) would return all of them.
+	const newestOf = <T>(items: readonly T[], count: number): T[] => (count > 0 ? items.slice(-count) : []);
+	const visibleTpsMax = (count: number): number => Math.max(0, ...newestOf(samples, count).map((sample) => sample.tps));
+	const roomFor = (gutter: number): number => Math.max(0, content - gutter - AXIS_SEPARATOR - RIGHT_MARGIN);
+	// The label gutter follows the widest axis label, so every row keeps the axis in one column and
+	// both graphs share it. The label names the tallest drawn bar and the bars depend on the room the
+	// gutter leaves, so the bars are first sized with the usual gutter. A wider gutter can only drop
+	// older bars, which cannot raise that maximum, so the label never outgrows the gutter it set.
+	const gutter = Math.max(
+		AXIS_LABEL_MIN,
+		visibleWidth(formatRate(visibleTpsMax(fitBars(samples.length, roomFor(AXIS_LABEL_MIN)).shown))),
+	);
 	// Both graphs share one width, so one count: the text below and the bars always agree.
-	const area = Math.max(0, content - AXIS_WIDTH - RIGHT_MARGIN);
+	const area = roomFor(gutter);
 	const { barWidth, shown } = fitBars(samples.length, area);
-	// The newest `shown` items. Not slice(-shown): slice(-0) would return all of them.
-	const newest = <T>(items: readonly T[]): T[] => (shown > 0 ? items.slice(-shown) : []);
+	const newest = <T>(items: readonly T[]): T[] => newestOf(items, shown);
 	// The numbers cover the whole session; the bars only the newest responses that fit.
 	const scope =
 		shown < samples.length
@@ -226,13 +241,13 @@ export function renderStatsPanel(
 			...rows.map((bars, index) => {
 				const body = refs.has(index) ? bars.padEnd(area).replaceAll(" ", REF_CHAR) : bars;
 				const label = index === 0 ? top : index === last ? "0" : "";
-				return `${label.padStart(AXIS_WIDTH - 2)} │${body}`;
+				return `${label.padStart(gutter)} │${body}`;
 			}),
 		];
 	};
 	// The TPS axis follows the bars that are drawn, so they use the full height. The cache
 	// graph is a percentage, so its 0..100 axis stays fixed.
-	const visibleTpsMax = Math.max(0, ...newest(samples).map((sample) => sample.tps));
+	const tpsMax = visibleTpsMax(shown);
 	const bodyLines = [
 		"",
 		scope,
@@ -240,8 +255,8 @@ export function renderStatsPanel(
 		...graph(
 			"TPS (tok/s)",
 			samples.map((sample) => sample.tps),
-			visibleTpsMax,
-			formatRate(visibleTpsMax),
+			tpsMax,
+			formatRate(tpsMax),
 			summary.tps,
 			formatRate,
 		),

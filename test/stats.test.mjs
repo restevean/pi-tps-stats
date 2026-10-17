@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { barChart, fitBars, minimumPanelWidth, refRow, renderStatsPanel, summarize } from "../src/stats.ts";
+import { barChart, fitBars, formatRate, minimumPanelWidth, refRow, renderStatsPanel, summarize } from "../src/stats.ts";
 
 // 100 tok in 1 s (80% cache read, 10% write) and 100 tok in 4 s (50% read, 0% write).
 const samples = [
@@ -306,6 +306,32 @@ const graphRows = (lines, heading, height = 6) => {
 	const start = lines.findIndex((line) => line.includes(heading));
 	return lines.slice(start + 1, start + 1 + height);
 };
+
+// The axis is the first border after the frame's own.
+const axisColumn = (row) => visibleWidth(row.slice(0, row.indexOf("│", 1)));
+const tpsSample = (tps) => ({ tps, tokens: 100, seconds: 1, input: 0, cacheRead: 0, cacheWrite: 0 });
+
+test("the value axis is one straight line whatever the width of the top label", () => {
+	for (const max of [9, 99.9, 99.96, 999, 9999, 13550, 123456]) {
+		const lines = renderStatsPanel([10, max, 20, 30].map(tpsSample), 80);
+		const columns = [...graphRows(lines, "TPS (tok/s)"), ...graphRows(lines, "cache read %")].map(axisColumn);
+		const expected = 3 + Math.max(4, formatRate(max).length);
+		assert.deepEqual(columns, Array(12).fill(expected), `max ${String(max)}: both graphs share one gutter`);
+	}
+});
+
+test("a top label that fits the usual gutter leaves the layout as it was", () => {
+	const lines = renderStatsPanel([10, 9999, 20, 30].map(tpsSample), 80);
+	assert.equal(axisColumn(graphRows(lines, "TPS (tok/s)")[0]), 7);
+	assert.equal(axisColumn(graphRows(lines, "TPS (tok/s)")[5]), 7);
+});
+
+test("a wider top label takes its column from the bars, one fewer at the narrowest panel", () => {
+	const many = (last) => Array.from({ length: 20 }, (_, index) => tpsSample(index === 19 ? last : 100 + index));
+	const scope = (last) => renderStatsPanel(many(last), minimumPanelWidth(15)).find((line) => line.includes("bars:"));
+	assert.ok(scope(9999)?.includes("last 15 of 20"), scope(9999));
+	assert.ok(scope(13550)?.includes("last 14 of 20"), scope(13550));
+});
 
 test("one blank row separates the scope line from the first graph header", () => {
 	for (const list of [many(5), many(200)]) {
