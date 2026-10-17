@@ -158,16 +158,16 @@ With Gentle Shell, which forwards `install` to Pi against its own home
 (`~/.gentle-shell/agent` unless you use `--link`):
 
 ```bash
-gentle-shell install git:github.com/restevean/pi-tps-stats@v0.1.2
+gentle-shell install git:github.com/restevean/pi-tps-stats@v0.1.3
 ```
 
 With plain Pi, which uses `~/.pi/agent`:
 
 ```bash
-pi install git:github.com/restevean/pi-tps-stats@v0.1.2
+pi install git:github.com/restevean/pi-tps-stats@v0.1.3
 ```
 
-Without the `@v0.1.2` suffix the latest `main` is installed, which can change.
+Without the `@v0.1.3` suffix the latest `main` is installed, which can change.
 
 Or install a local checkout, with either command:
 
