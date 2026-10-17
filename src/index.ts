@@ -157,7 +157,7 @@ export default function (pi: ExtensionAPI): void {
 		const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
 		const total = output + promptTokens;
 		const percent = (tokens: number): string => `${(promptTokens > 0 ? (tokens / promptTokens) * 100 : 0).toFixed(1)}%`;
-		return `TPS ${estimateMark}${fmtRate(rate)} tok/s. avg ${fmtRate(averageRate)} tok/s, out ${estimateMark}${count(output)}, in ${count(usage.input)}, cache ${count(usage.cacheRead)}/${count(usage.cacheWrite)}, cache % ${percent(usage.cacheRead)}/${percent(usage.cacheWrite)}, total ${estimateMark}${count(total)}, ${elapsedSec.toFixed(1)}s`;
+		return `TPS ${estimateMark}${fmtRate(rate)} tok/s, avg ${fmtRate(averageRate)} tok/s, out ${estimateMark}${count(output)}, in ${count(usage.input)}, cache ${count(usage.cacheRead)}/${count(usage.cacheWrite)}, cache % ${percent(usage.cacheRead)}/${percent(usage.cacheWrite)}, total ${estimateMark}${count(total)}, ${elapsedSec.toFixed(1)}s`;
 	};
 
 	const clearWidget = (): void => {

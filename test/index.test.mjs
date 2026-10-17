@@ -240,7 +240,7 @@ test("removes only its own persistent widget when switching to the footer or shu
 	h.ctx.ui.setWidget("gentle:yolo", ["YOLO ON"]);
 	await h.commands.get("tps").handler("status", h.ctx);
 	assert.equal(h.view.widget, undefined);
-	assert.match(h.view.status, /^TPS .* tok\/s\./);
+	assert.match(h.view.status, /^TPS .* tok\/s, avg /);
 	await h.commands.get("tps").handler("widget", h.ctx);
 	assert.match(h.view.widget[0], /^TPS /);
 	assert.equal(h.view.status, undefined);
@@ -312,7 +312,7 @@ test("matches the screenshot field order, full counts, and final response usage"
 			ctx,
 		);
 		assert.deepEqual(view.widget, [
-			"TPS 11.4 tok/s. avg 11.4 tok/s, out 33, in 2, cache 0/85,571, cache % 0.0%/100.0%, total 85,606, 2.9s",
+			"TPS 11.4 tok/s, avg 11.4 tok/s, out 33, in 2, cache 0/85,571, cache % 0.0%/100.0%, total 85,606, 2.9s",
 		]);
 	});
 });
@@ -334,7 +334,7 @@ test("updates all screenshot fields during streaming without changing the footer
 		setNow(2400);
 		sendUsage(43);
 		assert.deepEqual(view.widget, [
-			"TPS 10.0 tok/s. avg 10.0 tok/s, out 43, in 2, cache 0/85,571, cache % 0.0%/100.0%, total 85,616, 1.0s",
+			"TPS 10.0 tok/s, avg 10.0 tok/s, out 43, in 2, cache 0/85,571, cache % 0.0%/100.0%, total 85,616, 1.0s",
 		]);
 		assert.deepEqual(view.widgetOptions, { placement: "aboveEditor" });
 		assert.equal(view.status, undefined);
@@ -356,7 +356,7 @@ test("shows cache read/write percentages of prompt tokens next to their counts",
 			ctx,
 		);
 		assert.deepEqual(view.widget, [
-			"TPS 1000 tok/s. avg 1000 tok/s, out 1,000, in 100, cache 800/100, cache % 80.0%/10.0%, total 2,000, 1.0s",
+			"TPS 1000 tok/s, avg 1000 tok/s, out 1,000, in 100, cache 800/100, cache % 80.0%/10.0%, total 2,000, 1.0s",
 		]);
 		assert.deepEqual(view.widgetOptions, { placement: "aboveEditor" });
 		assert.ok(view.rawWidget[0].startsWith("\u001b[38;2;126;134;174m"));
@@ -369,7 +369,7 @@ test("renders zero cache percentages when there are no prompt tokens", () => {
 	const { handlers, ctx, view } = createHarness();
 	handlers.get("message_start")({ message: assistantMessage() }, ctx);
 	assert.deepEqual(view.widget, [
-		"TPS ~0.0 tok/s. avg 0.0 tok/s, out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
+		"TPS ~0.0 tok/s, avg 0.0 tok/s, out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
 	]);
 });
 
@@ -380,14 +380,14 @@ test("starts the measurement window only after a second output token", async () 
 
 		handlers.get("message_start")({ message: assistantMessage() }, ctx);
 		assert.deepEqual(view.widget, [
-			"TPS ~0.0 tok/s. avg 0.0 tok/s, out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
+			"TPS ~0.0 tok/s, avg 0.0 tok/s, out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
 		]);
 
 		setNow(1200);
 		update(harness, "x".repeat(4));
 		assert.deepEqual(
 			view.widget,
-			["TPS ~0.0 tok/s. avg 0.0 tok/s, out ~1, in 0, cache 0/0, cache % 0.0%/0.0%, total ~1, 0.0s"],
+			["TPS ~0.0 tok/s, avg 0.0 tok/s, out ~1, in 0, cache 0/0, cache % 0.0%/0.0%, total ~1, 0.0s"],
 			"a single output token does not start the measurement clock",
 		);
 
@@ -395,7 +395,7 @@ test("starts the measurement window only after a second output token", async () 
 		update(harness, "x".repeat(4));
 		assert.deepEqual(
 			view.widget,
-			["TPS ~0.0 tok/s. avg 0.0 tok/s, out ~2, in 0, cache 0/0, cache % 0.0%/0.0%, total ~2, 0.0s"],
+			["TPS ~0.0 tok/s, avg 0.0 tok/s, out ~2, in 0, cache 0/0, cache % 0.0%/0.0%, total ~2, 0.0s"],
 			"the second output token starts a zero-length window",
 		);
 
@@ -403,7 +403,7 @@ test("starts the measurement window only after a second output token", async () 
 		update(harness, "x".repeat(40));
 		assert.deepEqual(
 			view.widget,
-			["TPS ~50.0 tok/s. avg 50.0 tok/s, out ~12, in 0, cache 0/0, cache % 0.0%/0.0%, total ~12, 0.2s"],
+			["TPS ~50.0 tok/s, avg 50.0 tok/s, out ~12, in 0, cache 0/0, cache % 0.0%/0.0%, total ~12, 0.2s"],
 			"only tokens observed after the second token contribute to the rate",
 		);
 	});
@@ -420,7 +420,7 @@ test("falls back to whole-response timing when no second token is observed", asy
 		update(harness, "xxxx");
 		assert.deepEqual(
 			view.widget,
-			["TPS ~0.0 tok/s. avg 0.0 tok/s, out ~1, in 0, cache 0/0, cache % 0.0%/0.0%, total ~1, 0.0s"],
+			["TPS ~0.0 tok/s, avg 0.0 tok/s, out ~1, in 0, cache 0/0, cache % 0.0%/0.0%, total ~1, 0.0s"],
 			"the measurement window stays closed after a single token",
 		);
 
@@ -428,7 +428,7 @@ test("falls back to whole-response timing when no second token is observed", asy
 		handlers.get("message_end")({ message: assistantMessage({ output: 2 }) }, ctx);
 		assert.deepEqual(
 			view.widget,
-			["TPS 4.0 tok/s. avg 4.0 tok/s, out 2, in 0, cache 0/0, cache % 0.0%/0.0%, total 2, 0.5s"],
+			["TPS 4.0 tok/s, avg 4.0 tok/s, out 2, in 0, cache 0/0, cache % 0.0%/0.0%, total 2, 0.5s"],
 			"the final summary uses whole-response timing when the window never opened",
 		);
 	});
@@ -446,14 +446,14 @@ test("falls back to whole-response timing when the provider total does not excee
 		setNow(1400);
 		update(harness, " world");
 		assert.deepEqual(view.widget, [
-			"TPS ~0.0 tok/s. avg 0.0 tok/s, out ~3, in 0, cache 0/0, cache % 0.0%/0.0%, total ~3, 0.0s",
+			"TPS ~0.0 tok/s, avg 0.0 tok/s, out ~3, in 0, cache 0/0, cache % 0.0%/0.0%, total ~3, 0.0s",
 		]);
 
 		setNow(1500);
 		handlers.get("message_end")({ message: assistantMessage({ output: 2 }) }, ctx);
 		assert.deepEqual(
 			view.widget,
-			["TPS 4.0 tok/s. avg 4.0 tok/s, out 2, in 0, cache 0/0, cache % 0.0%/0.0%, total 2, 0.5s"],
+			["TPS 4.0 tok/s, avg 4.0 tok/s, out 2, in 0, cache 0/0, cache % 0.0%/0.0%, total 2, 0.5s"],
 			"a clamped measured numerator falls back instead of reporting 0.0 tok/s",
 		);
 	});
@@ -473,7 +473,7 @@ test("falls back to whole-response timing when streamed provider usage ends at t
 		setNow(1500);
 		handlers.get("message_end")({ message: assistantMessage({ output: 2 }) }, ctx);
 		assert.deepEqual(view.widget, [
-			"TPS 4.0 tok/s. avg 4.0 tok/s, out 2, in 0, cache 0/0, cache % 0.0%/0.0%, total 2, 0.5s",
+			"TPS 4.0 tok/s, avg 4.0 tok/s, out 2, in 0, cache 0/0, cache % 0.0%/0.0%, total 2, 0.5s",
 		]);
 	});
 });
@@ -486,7 +486,7 @@ test("keeps a stable final summary through display-mode changes", async () => {
 
 		handlers.get("message_start")({ message }, ctx);
 		assert.deepEqual(view.widget, [
-			"TPS ~0.0 tok/s. avg 0.0 tok/s, out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
+			"TPS ~0.0 tok/s, avg 0.0 tok/s, out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
 		]);
 
 		setNow(1200);
@@ -497,7 +497,7 @@ test("keeps a stable final summary through display-mode changes", async () => {
 
 		setNow(2000);
 		handlers.get("message_end")({ message: assistantMessage({ output: 300 }) }, ctx);
-		const finalWidget = "TPS 497 tok/s. avg 497 tok/s, out 300, in 0, cache 0/0, cache % 0.0%/0.0%, total 300, 0.6s";
+		const finalWidget = "TPS 497 tok/s, avg 497 tok/s, out 300, in 0, cache 0/0, cache % 0.0%/0.0%, total 300, 0.6s";
 		assert.deepEqual(view.widget, [finalWidget]);
 
 		setNow(10_000);
@@ -531,27 +531,27 @@ test("switches from estimated deltas to cumulative provider usage", async () => 
 		setNow(1200);
 		update(harness, "x".repeat(4));
 		assert.deepEqual(view.widget, [
-			"TPS ~0.0 tok/s. avg 0.0 tok/s, out ~1, in 0, cache 0/0, cache % 0.0%/0.0%, total ~1, 0.0s",
+			"TPS ~0.0 tok/s, avg 0.0 tok/s, out ~1, in 0, cache 0/0, cache % 0.0%/0.0%, total ~1, 0.0s",
 		]);
 
 		setNow(1400);
 		update(harness, "x".repeat(4));
 		assert.deepEqual(view.widget, [
-			"TPS ~0.0 tok/s. avg 0.0 tok/s, out ~2, in 0, cache 0/0, cache % 0.0%/0.0%, total ~2, 0.0s",
+			"TPS ~0.0 tok/s, avg 0.0 tok/s, out ~2, in 0, cache 0/0, cache % 0.0%/0.0%, total ~2, 0.0s",
 		]);
 
 		setNow(1600);
 		update(harness, "x".repeat(4), "text_delta", 50);
 		assert.deepEqual(
 			view.widget,
-			["TPS 250 tok/s. avg 250 tok/s, out 50, in 0, cache 0/0, cache % 0.0%/0.0%, total 50, 0.2s"],
+			["TPS 250 tok/s, avg 250 tok/s, out 50, in 0, cache 0/0, cache % 0.0%/0.0%, total 50, 0.2s"],
 			"the first advancing provider report replaces the heuristic and its rolling samples",
 		);
 
 		setNow(1800);
 		update(harness, "x".repeat(4), "thinking_delta", 90);
 		assert.deepEqual(view.widget, [
-			"TPS 225 tok/s. avg 225 tok/s, out 90, in 0, cache 0/0, cache % 0.0%/0.0%, total 90, 0.4s",
+			"TPS 225 tok/s, avg 225 tok/s, out 90, in 0, cache 0/0, cache % 0.0%/0.0%, total 90, 0.4s",
 		]);
 	});
 });
@@ -566,21 +566,21 @@ test("observes provider usage on updates without content deltas", async () => {
 		setNow(1100);
 		usageUpdate(harness, 20);
 		assert.deepEqual(view.widget, [
-			"TPS 0.0 tok/s. avg 0.0 tok/s, out 20, in 0, cache 0/0, cache % 0.0%/0.0%, total 20, 0.0s",
+			"TPS 0.0 tok/s, avg 0.0 tok/s, out 20, in 0, cache 0/0, cache % 0.0%/0.0%, total 20, 0.0s",
 		]);
 
 		setNow(1150);
 		usageUpdate(harness, 30, "toolcall_end");
 		assert.deepEqual(
 			view.widget,
-			["TPS 200 tok/s. avg 200 tok/s, out 30, in 0, cache 0/0, cache % 0.0%/0.0%, total 30, 0.1s"],
+			["TPS 200 tok/s, avg 200 tok/s, out 30, in 0, cache 0/0, cache % 0.0%/0.0%, total 30, 0.1s"],
 			"usage-only events render even inside the normal delta update interval",
 		);
 
 		setNow(2000);
 		handlers.get("message_end")({ message: assistantMessage({ output: 80 }) }, ctx);
 		assert.deepEqual(view.widget, [
-			"TPS 66.7 tok/s. avg 66.7 tok/s, out 80, in 0, cache 0/0, cache % 0.0%/0.0%, total 80, 0.9s",
+			"TPS 66.7 tok/s, avg 66.7 tok/s, out 80, in 0, cache 0/0, cache % 0.0%/0.0%, total 80, 0.9s",
 		]);
 	});
 });
@@ -592,7 +592,7 @@ test("status mode shows the same text as the configured widget, live and final",
 		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
 		assert.equal(
 			h.view.status,
-			"TPS ~0.0 tok/s. avg 0.0 tok/s, out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
+			"TPS ~0.0 tok/s, avg 0.0 tok/s, out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
 		);
 		setNow(2000);
 		h.handlers.get("message_end")(
@@ -600,7 +600,7 @@ test("status mode shows the same text as the configured widget, live and final",
 			h.ctx,
 		);
 		const expected =
-			"TPS 1000 tok/s. avg 1000 tok/s, out 1,000, in 100, cache 800/100, cache % 80.0%/10.0%, total 2,000, 1.0s";
+			"TPS 1000 tok/s, avg 1000 tok/s, out 1,000, in 100, cache 800/100, cache % 80.0%/10.0%, total 2,000, 1.0s";
 		assert.equal(h.view.status, expected);
 		assert.equal(h.view.widget, undefined, "status mode does not also register the widget");
 		await h.commands.get("tps").handler("widget", h.ctx);
@@ -625,25 +625,25 @@ test("ignores empty deltas and resets only the active measurement window", async
 		setNow(5200);
 		update(harness, "x".repeat(400), "toolcall_delta");
 		assert.deepEqual(view.widget, [
-			"TPS ~0.0 tok/s. avg 0.0 tok/s, out ~100, in 0, cache 0/0, cache % 0.0%/0.0%, total ~100, 0.0s",
+			"TPS ~0.0 tok/s, avg 0.0 tok/s, out ~100, in 0, cache 0/0, cache % 0.0%/0.0%, total ~100, 0.0s",
 		]);
 
 		setNow(5300);
 		await commands.get("tps").handler("reset", ctx);
 		assert.deepEqual(view.widget, [
-			"TPS ~0.0 tok/s. avg 0.0 tok/s, out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
+			"TPS ~0.0 tok/s, avg 0.0 tok/s, out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
 		]);
 
 		setNow(5500);
 		update(harness, "x".repeat(400));
 		assert.deepEqual(view.widget, [
-			"TPS ~500 tok/s. avg 500 tok/s, out ~100, in 0, cache 0/0, cache % 0.0%/0.0%, total ~100, 0.2s",
+			"TPS ~500 tok/s, avg 500 tok/s, out ~100, in 0, cache 0/0, cache % 0.0%/0.0%, total ~100, 0.2s",
 		]);
 
 		setNow(6000);
 		handlers.get("message_end")({ message: assistantMessage({ output: 500 }) }, ctx);
 		assert.deepEqual(view.widget, [
-			"TPS 571 tok/s. avg 571 tok/s, out 500, in 0, cache 0/0, cache % 0.0%/0.0%, total 500, 0.7s",
+			"TPS 571 tok/s, avg 571 tok/s, out 500, in 0, cache 0/0, cache % 0.0%/0.0%, total 500, 0.7s",
 		]);
 
 		handlers.get("session_shutdown")({ reason: "quit" }, ctx);
@@ -664,11 +664,11 @@ test("streaming reset excludes earlier reported tokens from final average and pe
 		setNow(3000);
 		usageUpdate(harness, 200);
 		assert.deepEqual(view.widget, [
-			"TPS 100 tok/s. avg 100 tok/s, out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s",
+			"TPS 100 tok/s, avg 100 tok/s, out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s",
 		]);
 		handlers.get("message_end")({ message: assistantMessage({ output: 200 }) }, ctx);
 		assert.deepEqual(view.widget, [
-			"TPS 100 tok/s. avg 100 tok/s, out 200, in 0, cache 0/0, cache % 0.0%/0.0%, total 200, 1.0s",
+			"TPS 100 tok/s, avg 100 tok/s, out 200, in 0, cache 0/0, cache % 0.0%/0.0%, total 200, 1.0s",
 		]);
 	});
 });
@@ -685,7 +685,7 @@ test("streaming reset with no later output does not fall back to pre-reset token
 		setNow(3000);
 		handlers.get("message_end")({ message: assistantMessage({ output: 100 }) }, ctx);
 		assert.deepEqual(view.widget, [
-			"TPS 0.0 tok/s. avg 0.0 tok/s, out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s",
+			"TPS 0.0 tok/s, avg 0.0 tok/s, out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s",
 		]);
 	});
 });
@@ -706,11 +706,11 @@ test("repeated resets before provider usage preserve the estimated pre-reset bas
 		setNow(4000);
 		usageUpdate(harness, 250);
 		assert.deepEqual(view.widget, [
-			"TPS 100 tok/s. avg 100 tok/s, out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s",
+			"TPS 100 tok/s, avg 100 tok/s, out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s",
 		]);
 		handlers.get("message_end")({ message: assistantMessage({ output: 250 }) }, ctx);
 		assert.deepEqual(view.widget, [
-			"TPS 100 tok/s. avg 100 tok/s, out 250, in 0, cache 0/0, cache % 0.0%/0.0%, total 250, 1.0s",
+			"TPS 100 tok/s, avg 100 tok/s, out 250, in 0, cache 0/0, cache % 0.0%/0.0%, total 250, 1.0s",
 		]);
 	});
 });
@@ -722,7 +722,7 @@ test("session average is total output over total generation time, not a mean of 
 		setNow(2000);
 		handlers.get("message_end")({ message: assistantMessage({ output: 100 }) }, ctx);
 		assert.deepEqual(view.widget, [
-			"TPS 100 tok/s. avg 100 tok/s, out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s",
+			"TPS 100 tok/s, avg 100 tok/s, out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s",
 		]);
 		setNow(3000);
 		handlers.get("message_start")({ message: assistantMessage() }, ctx);
@@ -730,7 +730,7 @@ test("session average is total output over total generation time, not a mean of 
 		handlers.get("message_end")({ message: assistantMessage({ output: 100 }) }, ctx);
 		// 200 tokens over 5.0s = 40.0; a mean of the two averages (100 and 25) would be 62.5.
 		assert.deepEqual(view.widget, [
-			"TPS 25.0 tok/s. avg 40.0 tok/s, out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 4.0s",
+			"TPS 25.0 tok/s, avg 40.0 tok/s, out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 4.0s",
 		]);
 	});
 });
@@ -749,7 +749,7 @@ test("the live line folds the current response into the session average", async 
 		usageUpdate(h, 100);
 		// Current response: 50 measured tokens in 1.0s. Session: (100 + 50) / (1.0 + 1.0) = 75.0.
 		assert.deepEqual(h.view.widget, [
-			"TPS 50.0 tok/s. avg 75.0 tok/s, out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s",
+			"TPS 50.0 tok/s, avg 75.0 tok/s, out 100, in 0, cache 0/0, cache % 0.0%/0.0%, total 100, 1.0s",
 		]);
 	});
 });
@@ -767,14 +767,14 @@ test("clearing the summary keeps the session average; a new session starts it ov
 		setNow(5000);
 		h.handlers.get("message_end")({ message: assistantMessage({ output: 100 }) }, h.ctx);
 		// 200 tokens over 3.0s.
-		assert.match(h.view.widget[0], /^TPS 50\.0 tok\/s\. avg 66\.7 tok\/s, /);
+		assert.match(h.view.widget[0], /^TPS 50\.0 tok\/s, avg 66\.7 tok\/s, /);
 		h.handlers.get("session_shutdown")({}, h.ctx);
 		h.handlers.get("session_start")({}, h.ctx);
 		setNow(6000);
 		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
 		setNow(8000);
 		h.handlers.get("message_end")({ message: assistantMessage({ output: 100 }) }, h.ctx);
-		assert.match(h.view.widget[0], /^TPS 50\.0 tok\/s\. avg 50\.0 tok\/s, /);
+		assert.match(h.view.widget[0], /^TPS 50\.0 tok\/s, avg 50\.0 tok\/s, /);
 	});
 });
 
@@ -1225,7 +1225,7 @@ test("a reset that leaves no measured output is not a statistics sample", async 
 		await h.commands.get("tps").handler("reset", h.ctx);
 		setNow(5000);
 		h.handlers.get("message_end")({ message: assistantMessage({ output: 100 }) }, h.ctx);
-		assert.match(h.view.widget[0], /^TPS 0\.0 tok\/s\. avg 100 tok\/s, /, "the line still shows the empty window");
+		assert.match(h.view.widget[0], /^TPS 0\.0 tok\/s, avg 100 tok\/s, /, "the line still shows the empty window");
 		const open = h.commands.get("tps").handler("stats", h.ctx);
 		const text = h.panels[0].component.render(80).join("\n");
 		assert.ok(text.includes("1 response"), `only the first message counts: ${text}`);
