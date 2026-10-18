@@ -63,7 +63,14 @@ function createHarness({ mode = "tui", hasUI = true, withKeybindings = true } = 
 		},
 		custom(factory, options) {
 			return new Promise((resolve) => {
-				panels.push({ component: factory(tui, theme, withKeybindings ? keybindings : undefined, resolve), options });
+				const panel = { closes: 0, options };
+				// Counts the host's done() calls: closing a promise twice is harmless, but the extension should not.
+				const done = (value) => {
+					panel.closes += 1;
+					resolve(value);
+				};
+				panel.component = factory(tui, theme, withKeybindings ? keybindings : undefined, done);
+				panels.push(panel);
 			});
 		},
 		setStatus(_key, content) {
@@ -1147,18 +1154,51 @@ test("after /tps reset clears the final summary there is no line to click, thoug
 	});
 });
 
-test("a second click while the panel is open does not open another one, and it reopens after closing", async () => {
+test("a click on the line while the panel is open closes it, and the next click opens it again", async () => {
 	await withFakeClock(async (setNow) => {
 		const h = createHarness();
 		await respond(h, setNow, 1000, 2000, { output: 100 });
 		h.mouse(click());
-		assert.equal(h.mouse(click())?.handled, true, "still consumed");
-		assert.equal(h.panels.length, 1, "only one panel");
+		assert.equal(h.panels.length, 1, "the first click opens the panel");
+		assert.equal(h.mouse(click())?.handled, true, "the click that closes it is consumed");
+		await flush();
+		assert.equal(h.panels.length, 1, "closing does not stack a second panel");
+		h.mouse(click());
+		assert.equal(h.panels.length, 2, "the panel was closed, so the next click opens a new one");
+		h.panels[1].component.handleInput("q");
+	});
+});
+
+test("clicks that arrive before the panel has closed neither stack panels nor close it twice", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		h.mouse(click());
+		h.mouse(click());
+		assert.equal(h.mouse(click())?.handled, true, "still consumed while the panel is closing");
+		await flush();
+		assert.equal(h.panels.length, 1, "only the first click opened a panel");
+		assert.equal(h.panels[0].closes, 1, "the panel was asked to close exactly once");
+		h.mouse(click());
+		assert.equal(h.panels.length, 2, "and it can be opened again afterwards");
+		h.panels[1].component.handleInput("q");
+	});
+});
+
+test("a panel closed with a key can be opened again by a click", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		h.mouse(click());
 		h.panels[0].component.handleInput("\u001b");
 		await flush();
 		h.mouse(click());
-		assert.equal(h.panels.length, 2, "a new panel after closing the first");
-		h.panels[1].component.handleInput("q");
+		assert.equal(h.panels.length, 2, "closing with Esc leaves nothing stale behind");
+		h.mouse(click());
+		await flush();
+		h.mouse(click());
+		assert.equal(h.panels.length, 3, "and a click-close followed by a click still works");
+		h.panels[2].component.handleInput("q");
 	});
 });
 

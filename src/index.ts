@@ -117,6 +117,9 @@ export default function (pi: ExtensionAPI): void {
 	let requestWidgetRender: (() => void) | undefined;
 	// True while the stats panel is open, so a click on the line cannot stack a second one.
 	let panelOpen = false;
+	// Closes the open panel; set once the host has built it and cleared as soon as it is used or gone,
+	// so a click that arrives while the panel is closing cannot close it twice.
+	let closePanel: (() => void) | undefined;
 
 	const fmtRate = formatRate;
 	const estimatedTokens = (chars: number): number => chars / CHARS_PER_TOKEN;
@@ -226,7 +229,12 @@ export default function (pi: ExtensionAPI): void {
 						if (event.type !== "click" || event.button !== "left" || event.y !== 0 || !widgetContent) {
 							return undefined;
 						}
-						if (!panelOpen && ui) {
+						if (panelOpen) {
+							// The panel is an overlay, so only a click outside its rectangle reaches this line.
+							const close = closePanel;
+							closePanel = undefined;
+							close?.();
+						} else if (ui) {
 							const target = ui;
 							showStats(target).catch(() => {
 								target.notify("Could not open the TPS panel", "warning");
@@ -474,6 +482,7 @@ export default function (pi: ExtensionAPI): void {
 			await openPanel(panelUi, snapshot);
 		} finally {
 			panelOpen = false;
+			closePanel = undefined;
 		}
 	};
 
@@ -489,6 +498,9 @@ export default function (pi: ExtensionAPI): void {
 					text: (text) => `${TPS_COLOR}${text}${RESET_FOREGROUND}`,
 					key: fg("accent"),
 					keyText: fg("dim"),
+				};
+				closePanel = () => {
+					done(undefined);
 				};
 				// A short terminal gets shorter graphs so the centered panel still fits.
 				const rows = (tui as { terminal?: { rows?: number } }).terminal?.rows;

@@ -91,11 +91,13 @@ row, not on the blank row under it). The click is a widget capability: it is a m
 event on the widget row, so in status mode, or while the display is off, there is no
 row to click. It needs the terminal UI in fullscreen mode, Pi's default, because
 regular mode leaves the mouse to the terminal and sends no clicks to extensions;
-`/tps stats` always works. A click while the panel is open does nothing. There is
-nothing to click while the line is not drawn: before the first response starts, and
-after `/tps reset` has cleared a final summary. While the line is drawn, a click opens
-the panel, or reports that there is no data when no response has been recorded in the
-statistics yet (aborted, failed and empty responses are not recorded).
+`/tps stats` always works. There is nothing to click while the line is not drawn:
+before the first response starts, and after `/tps reset` has cleared a final summary.
+While the line is drawn, a click opens the panel, or reports that there is no data
+when no response has been recorded in the statistics yet (aborted, failed and empty
+responses are not recorded). With the panel open, a click on the line closes it. The
+panel is drawn over the screen, so the click has to land on the part of the line that
+the panel does not cover; a click on the panel itself does not close it.
 
 `/tps stats` opens a framed panel, centered on the screen like the Claude usage
 panel. Close it with Esc, `q` or Ctrl+C, or with any key you bound to cancel. It is
