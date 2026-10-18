@@ -20,6 +20,7 @@
 		"LICENSE"
 	],
 	"license": "MIT",
+	"author": "restevean",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/restevean/pi-tps-stats.git"

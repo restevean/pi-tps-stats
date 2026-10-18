@@ -87,6 +87,11 @@ which can include the few tokens observed just before the window opened.
 The duration at the end of the line is the measured generation window, not
 necessarily the whole response time.
 
+After `/tps reset` during a response, live and final rates use only output
+since the reset. The final token total still describes the complete response.
+If provider usage is unavailable at reset time, the earlier output is estimated
+from its deltas and subtracted from the final rate calculation.
+
 ## Session statistics
 
 You can also open the panel by **clicking the TPS line** (a left click on the data
@@ -158,24 +163,40 @@ approximate prompt rate are no longer displayed.
 
 ## Install
 
-Install a released version, pinned to its tag.
-
-With Gentle Shell, which forwards `install` to Pi against its own home
-(`~/.gentle-shell/agent` unless you use `--link`):
+Install it from npm. With Gentle Shell, which forwards `install` to Pi against its
+own home (`~/.gentle-shell/agent` unless you use `--link`):
 
 ```bash
-gentle-shell install git:github.com/restevean/pi-tps-stats@v0.1.6
+gentle-shell install npm:pi-tps-stats
 ```
 
 With plain Pi, which uses `~/.pi/agent`:
 
 ```bash
-pi install git:github.com/restevean/pi-tps-stats@v0.1.6
+pi install npm:pi-tps-stats
 ```
 
-Without the `@v0.1.6` suffix the latest `main` is installed, which can change.
+Without a version this installs the latest release. To pin one, add it to the
+source, as in `npm:pi-tps-stats@<version>`; Pi treats a versioned npm source as
+pinned. npm has every version from 0.1.5 on; the
+[releases](https://github.com/restevean/pi-tps-stats/releases) list them all, and
+any of them, older ones included, can be installed from git pinned to its tag:
+`git:github.com/restevean/pi-tps-stats@v<version>`. Without a tag, a git install
+follows the latest `main`, which can change.
 
-Or install a local checkout, with either command:
+Install it from one source only. Pi tells npm packages apart by name and git
+packages by repository URL, so an npm install and a git install of this extension
+would both load. To switch from a git install, remove it first; the version can be
+left out:
+
+```bash
+pi remove git:github.com/restevean/pi-tps-stats
+pi install npm:pi-tps-stats
+```
+
+Use `gentle-shell` instead of `pi` for a Gentle Shell install.
+
+To install a local checkout instead, use either command:
 
 ```bash
 gentle-shell install /absolute/path/to/pi-tps-stats
@@ -193,8 +214,8 @@ mode) there is nothing to ask, so a bare `/tps` reports the usage instead and
 changes nothing.
 
 The persistent `#7E86AE` widget is enabled above the prompt editor by default.
-After reloading the local extension, use `/tps widget` to try it, or
-`/tps status` to publish the same text as a status instead.
+Use `/tps status` to publish the same text as a status instead, and `/tps widget`
+to switch back.
 
 | Command       | Effect                                                 |
 | ------------- | ------------------------------------------------------ |
@@ -228,7 +249,7 @@ gentle-shell -e ./src/index.ts
 
 This loads the local source for one invocation without adding it to your
 permanent package configuration. Use `pi` instead of `gentle-shell` for plain Pi,
-and do not load the npm version alongside the local copy.
+and do not load it alongside an installed copy of this extension.
 
 ## Differences from the original
 
@@ -250,7 +271,8 @@ does not read or write files, open network connections, start processes or read
 environment variables, and it never shows model text: the screen receives formatted
 numbers and fixed messages. A count that is not a finite number is shown as 0 and a
 very large one is capped at 10^15. Like any Pi extension it runs with your
-permissions, so install it from a pinned tag.
+permissions, so pin the version you reviewed: `npm:pi-tps-stats@<version>`, or a
+git tag.
 
 The package has no runtime dependencies and no install scripts, and publishes only
 `src`, `README.md` and `LICENSE`. Dependency build scripts are denied in
@@ -263,8 +285,3 @@ Petersson is retained in [LICENSE](LICENSE), as the license requires, followed b
 the notice for the modifications in this fork (restevean).
 
 [MIT](LICENSE)
-
-After `/tps reset` during a response, live and final rates use only output
-since the reset. The final token total still describes the complete response.
-If provider usage is unavailable at reset time, the earlier output is estimated
-from its deltas and subtracted from the final rate calculation.
