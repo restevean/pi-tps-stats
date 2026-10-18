@@ -4,7 +4,7 @@ title: Publish to npm and reach the pi.dev packages gallery
 status: To Do
 assignee: []
 created_date: '2026-10-16 19:19'
-updated_date: '2026-10-18 13:47'
+updated_date: '2026-10-18 14:17'
 labels:
   - npm
   - packaging
@@ -33,7 +33,7 @@ Blocked on a human action: as of 2026-10-16 `npm view pi-tps-stats` returns 404,
 - [x] #2 Every host-provided package declared in `peerDependencies` uses the `"*"` range that the Pi package guide requires, pinned by a test in `test/supply-chain.test.mjs`
 - [x] #3 The tarball from `npm pack --dry-run` contains only `src/**`, `README.md` and `LICENSE` in addition to the `package.json` npm always includes, defines no install-time lifecycle scripts, and `pnpm run verify` passes
 - [x] #4 The `restevean` npm account exists with a verified email and 2FA enabled (npm asked for a 2FA code on publish)
-- [x] #5 `npm publish` succeeds for the released version and `npm view pi-tps-stats` resolves instead of returning 404 (`pi-tps-stats@0.1.5` published on 2026-10-18; `latest` is 0.1.5 and its shasum matches the tarball packed before publishing)
+- [x] #5 `npm publish` succeeds for the released version and `npm view pi-tps-stats` resolves instead of returning 404 (`pi-tps-stats@0.1.5` and `pi-tps-stats@0.1.6` published on 2026-10-18; `latest` is 0.1.6 and its shasum matches the tarball packed before publishing)
 - [ ] #6 The package appears in the pi.dev package gallery, `pi install npm:pi-tps-stats` works, and no extension warning reports a misdeclared host dependency
 <!-- AC:END -->
 
@@ -52,4 +52,6 @@ Blocked on a human action: as of 2026-10-16 `npm view pi-tps-stats` returns 404,
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-18: `pi-tps-stats@0.1.5` is on npm. The registry showed a staged placeholder (`0.0.0-stage`) for the first minutes, then `latest` moved to 0.1.5. `pi install npm:pi-tps-stats@0.1.5` into a throwaway agent home installed 5 files and reported 0 vulnerabilities. The pi.dev gallery search for `pi-tps-stats` returned no match right after publishing, so criterion #6 stays open until the package shows up there. The no-warning part of #6 (misdeclared host dependency) was not observed in a live session yet.
+
+2026-10-18, 0.1.6: `pi-tps-stats@0.1.6` is on npm and `latest` points to it; its shasum (`7afa8f4b62799a5e918bfea4152999e80a449fe7`) equals the `npm pack --dry-run` of tag `v0.1.6`. The registry shows the new description ("Built with Gentle Shell, for Gentle Shell ...") and the keywords `tps`, `tokens-per-second`, `gentle-shell` and `gentle-pi`. `pi install npm:pi-tps-stats@0.1.6` into a throwaway agent home installed the five expected files and the README starts with the Gentle Shell notice. A few minutes after publishing, `npm search pi-tps-stats` did not list the package and the pi.dev gallery still returned no match, so criterion #6 stays open.
 <!-- SECTION:NOTES:END -->
