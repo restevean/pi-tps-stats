@@ -1,6 +1,6 @@
 {
 	"name": "pi-tps-stats",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"description": "Live TPS and token usage display for the Pi coding agent",
 	"keywords": [
 		"pi-package",
