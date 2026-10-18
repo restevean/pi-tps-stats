@@ -1,12 +1,16 @@
 {
 	"name": "pi-tps-stats",
 	"version": "0.1.5",
-	"description": "Live TPS and token usage display for the Pi coding agent",
+	"description": "Built with Gentle Shell, for Gentle Shell (works on plain Pi too). Live TPS, token and cache usage above the Pi prompt, plus a /tps stats panel.",
 	"keywords": [
 		"pi-package",
 		"extension",
 		"tokens",
-		"tps-stats"
+		"tps-stats",
+		"tps",
+		"tokens-per-second",
+		"gentle-shell",
+		"gentle-pi"
 	],
 	"type": "module",
 	"packageManager": "pnpm@11.13.0",

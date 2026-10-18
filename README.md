@@ -1,5 +1,8 @@
 # pi-tps-stats
 
+> **Built with [Gentle Shell](https://github.com/Gentleman-Programming/gentle-shell),
+> for Gentle Shell.** It also works on plain Pi.
+
 > **Based on a fork of
 > [pi-live-throughput](https://github.com/apetersson/pi-live-throughput)** by
 > Andreas Petersson (MIT), forked from version 0.3.0
