@@ -120,6 +120,15 @@ export default function (pi: ExtensionAPI): void {
 	let widgetOwner: object | undefined;
 	let widgetContent = "";
 	let requestWidgetRender: (() => void) | undefined;
+	// The TPS line is clickable, so it turns yellow while the pointer is over it.
+	let lineHovered = false;
+	// The host reports moves only to the component under the pointer, so a move inside the
+	// open panel is the line's only sign that the pointer has left it.
+	const unhoverLine = (): void => {
+		if (!lineHovered) return;
+		lineHovered = false;
+		requestWidgetRender?.();
+	};
 	// True while the stats panel is open, so a click on the line cannot stack a second one.
 	let panelOpen = false;
 	// Closes the open panel; set once the host has built it and cleared as soon as it is used or gone,
@@ -172,6 +181,7 @@ export default function (pi: ExtensionAPI): void {
 		ui?.setWidget(WIDGET_KEY, undefined);
 		widgetOwner = undefined;
 		widgetContent = "";
+		lineHovered = false;
 		requestWidgetRender = undefined;
 	};
 
@@ -222,8 +232,6 @@ export default function (pi: ExtensionAPI): void {
 				requestWidgetRender = () => {
 					tui.requestRender();
 				};
-				// The line is clickable, so it turns yellow while the pointer is over it.
-				let lineHovered = false;
 				return {
 					// One blank row separates the TPS line from whatever the host draws below it.
 					render: (width) => {
@@ -268,6 +276,7 @@ export default function (pi: ExtensionAPI): void {
 						if (widgetOwner !== owner) return;
 						widgetOwner = undefined;
 						widgetContent = "";
+						lineHovered = false;
 						requestWidgetRender = undefined;
 					},
 				};
@@ -553,6 +562,7 @@ export default function (pi: ExtensionAPI): void {
 					// Only a left click on the "esc close" hint closes it, like pressing Esc.
 					handleMouse(event: TuiMouseEvent) {
 						if (event.type === "move") {
+							unhoverLine();
 							// The host only reports moves inside the panel, so a pointer that jumps
 							// straight out of it leaves the hint yellow until the next move inside.
 							const hovered = onHint(event);

@@ -1351,6 +1351,27 @@ test("the TPS line stays yellow across live updates while hovered, and a drag do
 	});
 });
 
+test("a pointer that moves from the TPS line into the open panel restores the line color", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		const before = h.renderAtWidth(80);
+		h.mouse(click({ type: "move", button: "none" }));
+		h.mouse(click());
+		assert.ok(h.renderAtWidth(80)[0].startsWith(`${YELLOW}TPS `), "still yellow right after the click");
+		const panel = h.panels[0].component;
+		panel.render(40);
+		const requests = h.view.renderRequests;
+		panel.handleMouse?.(click({ type: "move", button: "none", x: 3, y: 2, width: 40, height: 20 }));
+		assert.deepEqual(h.renderAtWidth(80), before, "the line is back to its usual color");
+		assert.ok(h.view.renderRequests > requests, "the line was repainted");
+		const after = h.view.renderRequests;
+		panel.handleMouse?.(click({ type: "move", button: "none", x: 4, y: 2, width: 40, height: 20 }));
+		assert.equal(h.view.renderRequests, after, "further moves in the panel do not repaint the line");
+		panel.handleInput("q");
+	});
+});
+
 test("a drag over 'esc close' does not turn it yellow", async () => {
 	await withFakeClock(async (setNow) => {
 		const h = createHarness();
