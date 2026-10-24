@@ -1261,6 +1261,51 @@ test("other clicks inside the panel do not close it", async () => {
 	});
 });
 
+const YELLOW = "\u001b[33m";
+
+test("hovering 'esc close' turns it yellow, and moving off it inside the panel restores it", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		h.mouse(click());
+		const panel = h.panels[0].component;
+		const { x, y } = locate(panel, 40, "esc close");
+		const before = panel.render(40);
+		assert.ok(!before.some((line) => line.includes(YELLOW)), "nothing is yellow before any hover");
+		const move = (overrides) =>
+			panel.handleMouse?.(click({ type: "move", button: "none", width: 40, height: 20, ...overrides }));
+
+		assert.deepEqual(move({ x: x + 4, y }), { handled: true, render: true }, "entering the hint repaints");
+		const hovered = panel.render(40);
+		assert.ok(hovered[y].includes(`${YELLOW}esc`), "the hint row starts the yellow at the hint");
+		assert.equal(hovered.filter((line) => line.includes(YELLOW)).length, 1, "only the hint row is yellow");
+		assert.equal(move({ x: x + 8, y }), undefined, "moving within the hint changes nothing");
+
+		assert.deepEqual(move({ x: x + 9, y }), { handled: true, render: true }, "leaving the hint repaints");
+		assert.deepEqual(panel.render(40), before, "the panel looks as it did before the hover");
+		assert.equal(move({ x, y: 0 }), undefined, "other cells of the panel change nothing");
+		assert.equal(h.panels[0].closes, 0, "hovering never closes the panel");
+
+		move({ x, y });
+		assert.equal(panel.handleMouse?.(click({ x, y, width: 40, height: 20 }))?.handled, true);
+		await flush();
+		assert.equal(h.panels[0].closes, 1, "a click on the yellow hint still closes the panel");
+	});
+});
+
+test("a drag over 'esc close' does not turn it yellow", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		h.mouse(click());
+		const panel = h.panels[0].component;
+		const { x, y } = locate(panel, 40, "esc close");
+		panel.handleMouse?.(click({ type: "drag", x, y, width: 40, height: 20 }));
+		assert.ok(!panel.render(40).some((line) => line.includes(YELLOW)));
+		panel.handleInput("q");
+	});
+});
+
 test("a failing panel does not leave the click handler stuck", async () => {
 	await withFakeClock(async (setNow) => {
 		const h = createHarness();

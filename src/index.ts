@@ -31,6 +31,7 @@ const MEASUREMENT_MIN_TOKENS = 2;
 const PANEL_BARS = 15;
 // The key hint at the bottom of the panel; clicking it closes the panel like Esc.
 const CLOSE_HINT = "esc close";
+const hoverYellow = (text: string): string => `\u001b[33m${text}\u001b[39m`;
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (text: string): string => text.replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
 
@@ -517,19 +518,32 @@ export default function (pi: ExtensionAPI): void {
 						return false;
 					}
 				};
-				// The last rendered lines, so a click can find the "esc close" hint where it was drawn.
+				// A clickable element turns yellow while the pointer is over it.
+				const hoverStyle: PanelStyle = { ...style, key: hoverYellow, keyText: hoverYellow };
+				let hintHovered = false;
+				// The last rendered lines, so the mouse can find the "esc close" hint where it was drawn.
 				let shown: string[] = [];
+				const onHint = (event: TuiMouseEvent): boolean => {
+					const row = stripAnsi(shown[event.y] ?? "");
+					const at = row.indexOf(CLOSE_HINT);
+					if (at < 0) return false;
+					const start = visibleWidth(row.slice(0, at));
+					return event.x >= start && event.x < start + CLOSE_HINT.length;
+				};
 				return {
-					render: (width) => (shown = renderStatsPanel(snapshot, width, style, graphHeight)),
-					// Fullscreen mode routes clicks inside the overlay here, in panel-local cells.
+					render: (width) => (shown = renderStatsPanel(snapshot, width, hintHovered ? hoverStyle : style, graphHeight)),
+					// Fullscreen mode routes mouse events inside the overlay here, in panel-local cells.
 					// Only a left click on the "esc close" hint closes it, like pressing Esc.
 					handleMouse(event: TuiMouseEvent) {
-						if (event.type !== "click" || event.button !== "left") return undefined;
-						const row = stripAnsi(shown[event.y] ?? "");
-						const at = row.indexOf(CLOSE_HINT);
-						if (at < 0) return undefined;
-						const start = visibleWidth(row.slice(0, at));
-						if (event.x < start || event.x >= start + CLOSE_HINT.length) return undefined;
+						if (event.type === "move") {
+							// The host only reports moves inside the panel, so a pointer that jumps
+							// straight out of it leaves the hint yellow until the next move inside.
+							const hovered = onHint(event);
+							if (hovered === hintHovered) return undefined;
+							hintHovered = hovered;
+							return { handled: true, render: true };
+						}
+						if (event.type !== "click" || event.button !== "left" || !onHint(event)) return undefined;
 						done(undefined);
 						return { handled: true };
 					},
