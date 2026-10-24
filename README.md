@@ -105,11 +105,13 @@ While the line is drawn, a click opens the panel, or reports that there is no da
 when no response has been recorded in the statistics yet (aborted, failed and empty
 responses are not recorded). With the panel open, a click on the line closes it. The
 panel is drawn over the screen, so the click has to land on the part of the line that
-the panel does not cover; a click on the panel itself does not close it.
+the panel does not cover. Inside the panel, only a click on its `esc close` hint
+closes it; a click anywhere else on the panel does nothing.
 
 `/tps stats` opens a framed panel, centered on the screen like the Claude usage
 panel. Close it with Esc, `q` or Ctrl+C, with any key you bound to cancel, or by
-clicking the TPS line (outside the panel, as described above). It is
+clicking either its `esc close` hint or the TPS line (outside the panel, as described
+above); both clicks need fullscreen mode. It is
 narrow: 26.25% of the terminal, at least 57 columns. It has one entry per completed
 assistant message that produced output since the session started. Aborted, failed or
 empty messages, and messages left with less than one token after a `/tps reset`, are

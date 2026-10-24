@@ -1202,6 +1202,65 @@ test("a panel closed with a key can be opened again by a click", async () => {
 	});
 });
 
+// Finds the panel row and columns that show the given plain text, after rendering at `width`.
+const locate = (component, width, text) => {
+	// eslint-disable-next-line no-control-regex
+	const lines = component.render(width).map((line) => line.replace(/\u001b\[[0-9;]*m/g, ""));
+	const y = lines.findIndex((line) => line.includes(text));
+	return { y, x: y < 0 ? -1 : [...lines[y].slice(0, lines[y].indexOf(text))].length };
+};
+
+test("a left click on 'esc close' inside the panel closes it, and the line can open it again", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		h.mouse(click());
+		const panel = h.panels[0].component;
+		const { x, y } = locate(panel, 40, "esc close");
+		assert.ok(y > 0, "the framed panel shows the key hint");
+		for (const column of [x, x + 4, x + 8]) {
+			const h2 = createHarness();
+			await respond(h2, setNow, 1000, 2000, { output: 100 });
+			h2.mouse(click());
+			const p = h2.panels[0].component;
+			p.render(40);
+			const result = p.handleMouse?.(click({ x: column, y, width: 40, height: 20 }));
+			assert.equal(result?.handled, true, `column ${column} is consumed`);
+			await flush();
+			assert.equal(h2.panels[0].closes, 1, `column ${column} closes the panel once`);
+		}
+		panel.handleMouse?.(click({ x, y, width: 40, height: 20 }));
+		await flush();
+		h.mouse(click());
+		assert.equal(h.panels.length, 2, "after a click on 'esc close' the line opens a new panel");
+		h.panels[1].component.handleInput("q");
+	});
+});
+
+test("other clicks inside the panel do not close it", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		h.mouse(click());
+		const panel = h.panels[0].component;
+		const { x, y } = locate(panel, 40, "esc close");
+		for (const event of [
+			click({ x: x - 1, y }),
+			click({ x: x + 9, y }),
+			click({ x, y: y - 1 }),
+			click({ x, y: 0 }),
+			click({ x, y, button: "right" }),
+			click({ x, y, type: "press" }),
+			click({ x, y, type: "wheel", button: "none" }),
+		]) {
+			panel.handleMouse?.({ ...event, width: 40, height: 20 });
+		}
+		await flush();
+		assert.equal(h.panels[0].closes, 0, "the panel stays open");
+		panel.handleInput("q");
+	});
+});
+
 test("a failing panel does not leave the click handler stuck", async () => {
 	await withFakeClock(async (setNow) => {
 		const h = createHarness();

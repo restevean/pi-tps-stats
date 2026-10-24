@@ -14,7 +14,7 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { Key, matchesKey, truncateToWidth, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { formatRate, minimumPanelWidth, renderStatsPanel, type PanelStyle, type ResponseSample } from "./stats.ts";
 
 const WIDGET_KEY = "tps-stats";
@@ -29,6 +29,10 @@ const MEASUREMENT_MIN_TOKENS = 2;
 // The stats panel floor: room for fifteen bars. The width is derived from the bar geometry
 // in stats.ts, so it cannot drift from what the panel actually draws.
 const PANEL_BARS = 15;
+// The key hint at the bottom of the panel; clicking it closes the panel like Esc.
+const CLOSE_HINT = "esc close";
+// eslint-disable-next-line no-control-regex
+const stripAnsi = (text: string): string => text.replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
 
 type DisplayMode = "widget" | "status";
 
@@ -513,8 +517,22 @@ export default function (pi: ExtensionAPI): void {
 						return false;
 					}
 				};
+				// The last rendered lines, so a click can find the "esc close" hint where it was drawn.
+				let shown: string[] = [];
 				return {
-					render: (width) => renderStatsPanel(snapshot, width, style, graphHeight),
+					render: (width) => (shown = renderStatsPanel(snapshot, width, style, graphHeight)),
+					// Fullscreen mode routes clicks inside the overlay here, in panel-local cells.
+					// Only a left click on the "esc close" hint closes it, like pressing Esc.
+					handleMouse(event: TuiMouseEvent) {
+						if (event.type !== "click" || event.button !== "left") return undefined;
+						const row = stripAnsi(shown[event.y] ?? "");
+						const at = row.indexOf(CLOSE_HINT);
+						if (at < 0) return undefined;
+						const start = visibleWidth(row.slice(0, at));
+						if (event.x < start || event.x >= start + CLOSE_HINT.length) return undefined;
+						done(undefined);
+						return { handled: true };
+					},
 					handleInput(data) {
 						// Esc, q and Ctrl+C like Pi's own selectors, plus whatever the user bound to cancel.
 						const cancel =
