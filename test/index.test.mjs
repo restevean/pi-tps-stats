@@ -1321,6 +1321,23 @@ test("hovering the TPS line turns it yellow, and moving to the blank row below r
 	});
 });
 
+test("a TPS line cut to fit keeps its '...' in the line color, and in yellow while hovered", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		const normal = h.renderAtWidth(30)[0];
+		assert.equal(visibleWidth(normal), 30);
+		// eslint-disable-next-line no-control-regex
+		assert.match(normal, /^\u001b\[38;2;126;134;174mTPS [^\u001b]*\.\.\.\u001b\[39m$/, JSON.stringify(normal));
+		h.mouse(click({ type: "move", button: "none" }));
+		const hovered = h.renderAtWidth(30)[0];
+		assert.equal(visibleWidth(hovered), 30);
+		// eslint-disable-next-line no-control-regex
+		assert.match(hovered, /^\u001b\[33mTPS [^\u001b]*\.\.\.\u001b\[39m$/, JSON.stringify(hovered));
+		assert.ok(h.renderAtWidth(400)[0].endsWith("s\u001b[39m"), "a line that fits gets no '...'");
+	});
+});
+
 test("the TPS line stays yellow across live updates while hovered, and a drag does not hover it", async () => {
 	await withFakeClock(async (setNow) => {
 		const h = createHarness();

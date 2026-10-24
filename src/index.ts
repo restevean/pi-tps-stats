@@ -228,8 +228,11 @@ export default function (pi: ExtensionAPI): void {
 					// One blank row separates the TPS line from whatever the host draws below it.
 					render: (width) => {
 						if (!widgetContent) return [];
-						const content = lineHovered ? hoverYellow(stripAnsi(widgetContent)) : widgetContent;
-						return [truncateToWidth(content, width), ""];
+						// Cut the plain text, then color it: truncateToWidth resets the color before its
+						// "...", which would leave the ellipsis in the terminal's default color.
+						const cut = stripAnsi(truncateToWidth(stripAnsi(widgetContent), width));
+						if (!cut) return ["", ""];
+						return [lineHovered ? hoverYellow(cut) : `${TPS_COLOR}${cut}${RESET_FOREGROUND}`, ""];
 					},
 					invalidate() {
 						// Stateless: render() always reads the live content.
