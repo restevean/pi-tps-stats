@@ -120,15 +120,6 @@ export default function (pi: ExtensionAPI): void {
 	let widgetOwner: object | undefined;
 	let widgetContent = "";
 	let requestWidgetRender: (() => void) | undefined;
-	// The TPS line is clickable, so it turns yellow while the pointer is over it.
-	let lineHovered = false;
-	// The host reports moves only to the component under the pointer, so a move inside the
-	// open panel is the line's only sign that the pointer has left it.
-	const unhoverLine = (): void => {
-		if (!lineHovered) return;
-		lineHovered = false;
-		requestWidgetRender?.();
-	};
 	// True while the stats panel is open, so a click on the line cannot stack a second one.
 	let panelOpen = false;
 	// Closes the open panel; set once the host has built it and cleared as soon as it is used or gone,
@@ -181,7 +172,6 @@ export default function (pi: ExtensionAPI): void {
 		ui?.setWidget(WIDGET_KEY, undefined);
 		widgetOwner = undefined;
 		widgetContent = "";
-		lineHovered = false;
 		requestWidgetRender = undefined;
 	};
 
@@ -240,7 +230,7 @@ export default function (pi: ExtensionAPI): void {
 						// "...", which would leave the ellipsis in the terminal's default color.
 						const cut = stripAnsi(truncateToWidth(stripAnsi(widgetContent), width));
 						if (!cut) return ["", ""];
-						return [lineHovered ? hoverYellow(cut) : `${TPS_COLOR}${cut}${RESET_FOREGROUND}`, ""];
+						return [`${TPS_COLOR}${cut}${RESET_FOREGROUND}`, ""];
 					},
 					invalidate() {
 						// Stateless: render() always reads the live content.
@@ -248,14 +238,6 @@ export default function (pi: ExtensionAPI): void {
 					// Fullscreen mode routes clicks here; regular mode leaves the mouse to the terminal.
 					// Only a left click on the TPS row counts, not the blank row below it.
 					handleMouse(event: TuiMouseEvent) {
-						if (event.type === "move") {
-							// Like the panel hint, the host reports moves only over this widget, so a
-							// pointer that jumps straight off the line leaves it yellow until it moves back.
-							const hovered = event.y === 0 && widgetContent !== "";
-							if (hovered === lineHovered) return undefined;
-							lineHovered = hovered;
-							return { handled: true, render: true };
-						}
 						if (event.type !== "click" || event.button !== "left" || event.y !== 0 || !widgetContent) {
 							return undefined;
 						}
@@ -276,7 +258,6 @@ export default function (pi: ExtensionAPI): void {
 						if (widgetOwner !== owner) return;
 						widgetOwner = undefined;
 						widgetContent = "";
-						lineHovered = false;
 						requestWidgetRender = undefined;
 					},
 				};
@@ -562,7 +543,6 @@ export default function (pi: ExtensionAPI): void {
 					// Only a left click on the "esc close" hint closes it, like pressing Esc.
 					handleMouse(event: TuiMouseEvent) {
 						if (event.type === "move") {
-							unhoverLine();
 							// The host only reports moves inside the panel, so a pointer that jumps
 							// straight out of it leaves the hint yellow until the next move inside.
 							const hovered = onHint(event);

@@ -1104,12 +1104,11 @@ test("only a left click on the data row opens the panel", async () => {
 			click({ button: "middle" }),
 			click({ type: "press" }),
 			click({ type: "release" }),
+			click({ type: "move", button: "none" }),
 			click({ type: "wheel", button: "none" }),
 		]) {
 			assert.equal(h.mouse(event), undefined, JSON.stringify(event));
 		}
-		// A move over the line is consumed for the hover, but it is not a click.
-		assert.equal(h.mouse(click({ type: "move", button: "none" }))?.handled, true);
 		assert.equal(h.panels.length, 0, "none of them opened the panel");
 	});
 });
@@ -1294,34 +1293,7 @@ test("hovering 'esc close' turns it yellow, and moving off it inside the panel r
 	});
 });
 
-test("hovering the TPS line turns it yellow, and moving to the blank row below restores it", async () => {
-	await withFakeClock(async (setNow) => {
-		const h = createHarness();
-		await respond(h, setNow, 1000, 2000, { output: 100 });
-		const before = h.renderAtWidth(80);
-		assert.ok(before[0].startsWith("\u001b[38;2;126;134;174mTPS "), "the line starts in its usual color");
-		const move = (overrides) => h.mouse(click({ type: "move", button: "none", ...overrides }));
-
-		assert.deepEqual(move({ x: 3 }), { handled: true, render: true }, "entering the line repaints");
-		const hovered = h.renderAtWidth(80);
-		assert.ok(hovered[0].startsWith(`${YELLOW}TPS `), "the whole line is yellow");
-		assert.ok(!hovered[0].includes("\u001b[38;2;126;134;174m"), "without the usual color");
-		assert.equal(hovered[1], "", "the blank row stays blank");
-		assert.equal(move({ x: 40 }), undefined, "moving along the line changes nothing");
-
-		assert.deepEqual(move({ x: 3, y: 1 }), { handled: true, render: true }, "leaving the line repaints");
-		assert.deepEqual(h.renderAtWidth(80), before, "the line looks as it did before the hover");
-		assert.equal(move({ x: 3, y: 1 }), undefined, "moving along the blank row changes nothing");
-		assert.equal(h.panels.length, 0, "hovering never opens the panel");
-
-		move({ x: 3 });
-		h.mouse(click());
-		assert.equal(h.panels.length, 1, "a click on the yellow line still opens the panel");
-		h.panels[0].component.handleInput("q");
-	});
-});
-
-test("a TPS line cut to fit keeps its '...' in the line color, and in yellow while hovered", async () => {
+test("a TPS line cut to fit keeps its '...' in the line color, and the pointer over it changes nothing", async () => {
 	await withFakeClock(async (setNow) => {
 		const h = createHarness();
 		await respond(h, setNow, 1000, 2000, { output: 100 });
@@ -1329,46 +1301,11 @@ test("a TPS line cut to fit keeps its '...' in the line color, and in yellow whi
 		assert.equal(visibleWidth(normal), 30);
 		// eslint-disable-next-line no-control-regex
 		assert.match(normal, /^\u001b\[38;2;126;134;174mTPS [^\u001b]*\.\.\.\u001b\[39m$/, JSON.stringify(normal));
-		h.mouse(click({ type: "move", button: "none" }));
-		const hovered = h.renderAtWidth(30)[0];
-		assert.equal(visibleWidth(hovered), 30);
-		// eslint-disable-next-line no-control-regex
-		assert.match(hovered, /^\u001b\[33mTPS [^\u001b]*\.\.\.\u001b\[39m$/, JSON.stringify(hovered));
+		for (const type of ["move", "drag"]) {
+			h.mouse(click({ type, button: type === "move" ? "none" : "left" }));
+			assert.equal(h.renderAtWidth(30)[0], normal, `a ${type} over the line keeps its color`);
+		}
 		assert.ok(h.renderAtWidth(400)[0].endsWith("s\u001b[39m"), "a line that fits gets no '...'");
-	});
-});
-
-test("the TPS line stays yellow across live updates while hovered, and a drag does not hover it", async () => {
-	await withFakeClock(async (setNow) => {
-		const h = createHarness();
-		assert.equal(h.mouse(click({ type: "move", button: "none" })), undefined, "no line, no hover");
-		await respond(h, setNow, 1000, 2000, { output: 100 });
-		h.mouse(click({ type: "drag" }));
-		assert.ok(!h.renderAtWidth(80)[0].includes(YELLOW), "a drag is not a hover");
-		h.mouse(click({ type: "move", button: "none" }));
-		await respond(h, setNow, 3000, 4000, { output: 50 });
-		assert.ok(h.renderAtWidth(80)[0].startsWith(`${YELLOW}TPS `), "new content keeps the hover");
-	});
-});
-
-test("a pointer that moves from the TPS line into the open panel restores the line color", async () => {
-	await withFakeClock(async (setNow) => {
-		const h = createHarness();
-		await respond(h, setNow, 1000, 2000, { output: 100 });
-		const before = h.renderAtWidth(80);
-		h.mouse(click({ type: "move", button: "none" }));
-		h.mouse(click());
-		assert.ok(h.renderAtWidth(80)[0].startsWith(`${YELLOW}TPS `), "still yellow right after the click");
-		const panel = h.panels[0].component;
-		panel.render(40);
-		const requests = h.view.renderRequests;
-		panel.handleMouse?.(click({ type: "move", button: "none", x: 3, y: 2, width: 40, height: 20 }));
-		assert.deepEqual(h.renderAtWidth(80), before, "the line is back to its usual color");
-		assert.ok(h.view.renderRequests > requests, "the line was repainted");
-		const after = h.view.renderRequests;
-		panel.handleMouse?.(click({ type: "move", button: "none", x: 4, y: 2, width: 40, height: 20 }));
-		assert.equal(h.view.renderRequests, after, "further moves in the panel do not repaint the line");
-		panel.handleInput("q");
 	});
 });
 
