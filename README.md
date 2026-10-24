@@ -106,10 +106,11 @@ when no response has been recorded in the statistics yet (aborted, failed and em
 responses are not recorded). With the panel open, a click on the line closes it. The
 panel is drawn over the screen, so the click has to land on the part of the line that
 the panel does not cover. Inside the panel, only a click on its `esc close` hint
-closes it; a click anywhere else on the panel does nothing. The hint turns yellow
-while the pointer is over it. The terminal only reports pointer moves inside the
-panel to the extension, so a pointer that leaves the panel in one quick jump can
-leave the hint yellow until it moves inside the panel again.
+closes it; a click anywhere else on the panel does nothing. The TPS line and the
+hint turn yellow while the pointer is over them. The terminal only reports pointer
+moves over the line or inside the panel to the extension, so a pointer that leaves
+one of them in one quick jump can leave it yellow until the pointer moves over it
+again. Moving down from the line onto the blank row below it restores its color.
 
 `/tps stats` opens a framed panel, centered on the screen like the Claude usage
 panel. Close it with Esc, `q` or Ctrl+C, with any key you bound to cancel, or by

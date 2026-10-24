@@ -222,15 +222,29 @@ export default function (pi: ExtensionAPI): void {
 				requestWidgetRender = () => {
 					tui.requestRender();
 				};
+				// The line is clickable, so it turns yellow while the pointer is over it.
+				let lineHovered = false;
 				return {
 					// One blank row separates the TPS line from whatever the host draws below it.
-					render: (width) => (widgetContent ? [truncateToWidth(widgetContent, width), ""] : []),
+					render: (width) => {
+						if (!widgetContent) return [];
+						const content = lineHovered ? hoverYellow(stripAnsi(widgetContent)) : widgetContent;
+						return [truncateToWidth(content, width), ""];
+					},
 					invalidate() {
 						// Stateless: render() always reads the live content.
 					},
 					// Fullscreen mode routes clicks here; regular mode leaves the mouse to the terminal.
 					// Only a left click on the TPS row counts, not the blank row below it.
 					handleMouse(event: TuiMouseEvent) {
+						if (event.type === "move") {
+							// Like the panel hint, the host reports moves only over this widget, so a
+							// pointer that jumps straight off the line leaves it yellow until it moves back.
+							const hovered = event.y === 0 && widgetContent !== "";
+							if (hovered === lineHovered) return undefined;
+							lineHovered = hovered;
+							return { handled: true, render: true };
+						}
 						if (event.type !== "click" || event.button !== "left" || event.y !== 0 || !widgetContent) {
 							return undefined;
 						}
