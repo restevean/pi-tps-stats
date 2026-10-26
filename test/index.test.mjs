@@ -613,16 +613,158 @@ test("a new response keeps the previous summary on screen until its measurement 
 
 			setNow(9400);
 			update(h, "x".repeat(4));
-			assert.equal(
-				shown(),
-				"TPS ~0.0 tok/s, avg 100 tok/s, out ~2, in 0, cache 0/0, cache % 0.0%/0.0%, total ~2, 0.0s",
-				"the second token starts the measurement and the live line",
-			);
+			assert.equal(shown(), summary, "the second token starts a window whose rate is still 0, so the summary stays");
 			setNow(9600);
 			update(h, "x".repeat(40));
-			assert.match(shown(), /^TPS ~50\.0 tok\/s, /);
+			assert.match(shown(), /^TPS ~50\.0 tok\/s, /, "the first real rate replaces the summary with the live line");
 		});
 	}
+});
+
+const FIRST_SUMMARY = "TPS 100 tok/s, avg 100 tok/s, out 100, in 10, cache 0/0, cache % 0.0%/0.0%, total 110, 1.0s";
+
+test("a usage update that delivers all output at once keeps the last reading until a real rate appears", async () => {
+	for (const status of [false, true]) {
+		await withFakeClock(async (setNow) => {
+			const h = createHarness();
+			if (status) await h.commands.get("tps").handler("status", h.ctx);
+			const shown = () => (status ? h.view.status : h.view.widget?.[0]);
+			await respond(h, setNow, 1000, 2000, { output: 100, input: 10 });
+			assert.equal(shown(), FIRST_SUMMARY);
+
+			setNow(5000);
+			h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+			setNow(5100);
+			usageUpdate(h, 7);
+			assert.equal(shown(), FIRST_SUMMARY, `${status ? "status" : "widget"}: a zero-length window shows no 0.0`);
+
+			// A subagent runs in another process: nothing arrives for a long while.
+			setNow(30000);
+			await h.commands.get("tps").handler(status ? "status" : "widget", h.ctx);
+			assert.equal(shown(), FIRST_SUMMARY, "a render with nothing new still shows the last reading");
+			await h.commands.get("tps").handler("on", h.ctx);
+			assert.equal(shown(), FIRST_SUMMARY);
+
+			setNow(30500);
+			usageUpdate(h, 12);
+			assert.equal(
+				shown(),
+				"TPS 1.7 tok/s, avg 4.0 tok/s, out 12, in 0, cache 0/0, cache % 0.0%/0.0%, total 12, 25.4s",
+				"new tokens give a real rate and the live line takes over",
+			);
+		});
+	}
+});
+
+test("a pause longer than the rolling window keeps the last live reading instead of 0.0", async () => {
+	for (const status of [false, true]) {
+		await withFakeClock(async (setNow) => {
+			const h = createHarness();
+			if (status) await h.commands.get("tps").handler("status", h.ctx);
+			const shown = () => (status ? h.view.status : h.view.widget?.[0]);
+			h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+			setNow(1100);
+			usageUpdate(h, 10);
+			setNow(1600);
+			usageUpdate(h, 40);
+			const live = "TPS 60.0 tok/s, avg 60.0 tok/s, out 40, in 0, cache 0/0, cache % 0.0%/0.0%, total 40, 0.5s";
+			assert.equal(shown(), live);
+
+			setNow(6000);
+			await h.commands.get("tps").handler("on", h.ctx);
+			assert.equal(shown(), live, `${status ? "status" : "widget"}: the empty window does not show 0.0`);
+
+			setNow(6100);
+			usageUpdate(h, 60);
+			assert.equal(
+				shown(),
+				"TPS 6.7 tok/s, avg 10.0 tok/s, out 60, in 0, cache 0/0, cache % 0.0%/0.0%, total 60, 5.0s",
+				"the next tokens replace the held line",
+			);
+		});
+	}
+});
+
+test("a final summary whose rate is 0 keeps the last reading, and the statistics ignore it", async () => {
+	for (const status of [false, true]) {
+		await withFakeClock(async (setNow) => {
+			const h = createHarness();
+			if (status) await h.commands.get("tps").handler("status", h.ctx);
+			const shown = () => (status ? h.view.status : h.view.widget?.[0]);
+			await respond(h, setNow, 1000, 2000, { output: 100, input: 10 });
+			await respond(h, setNow, 3000, 3500, { output: 0, input: 5 });
+			assert.equal(shown(), FIRST_SUMMARY, `${status ? "status" : "widget"}: the empty response does not replace it`);
+			assert.equal(h.view.notifications.length, status ? 1 : 0, "no notification explains the held line");
+
+			await respond(h, setNow, 4000, 5000, { output: 300, input: 10 });
+			assert.equal(
+				shown(),
+				"TPS 300 tok/s, avg 200 tok/s, out 300, in 10, cache 0/0, cache % 0.0%/0.0%, total 310, 1.0s",
+				"the next real summary replaces it",
+			);
+			setNow(6000);
+			h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+			setNow(6100);
+			usageUpdate(h, 5);
+			setNow(6600);
+			usageUpdate(h, 10);
+			assert.match(
+				shown(),
+				/^TPS 10\.0 tok\/s, avg 162 tok\/s, /,
+				"the live average folds 5 tokens in 0.5 s into 400 tokens in 2 s, the empty response counting for nothing",
+			);
+		});
+	}
+});
+
+test("a response whose first reading is 0 shows the zero line when no reading exists yet", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 0, input: 10 });
+		assert.deepEqual(h.view.widget, [
+			"TPS 0.0 tok/s, avg 0.0 tok/s, out 0, in 10, cache 0/0, cache % 0.0%/0.0%, total 10, 1.0s",
+		]);
+	});
+});
+
+test("/tps reset forgets the held reading: the live line shows its zeros and a cleared summary stays cleared", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100, input: 10 });
+		setNow(5000);
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		setNow(5100);
+		usageUpdate(h, 7);
+		assert.equal(h.view.widget[0], FIRST_SUMMARY);
+
+		await h.commands.get("tps").handler("reset", h.ctx);
+		assert.deepEqual(h.view.widget, [
+			"TPS 0.0 tok/s, avg 100 tok/s, out 0, in 0, cache 0/0, cache % 0.0%/0.0%, total 0, 0.0s",
+		]);
+		setNow(9000);
+		await h.commands.get("tps").handler("on", h.ctx);
+		assert.equal(h.view.widget[0].slice(0, 12), "TPS 0.0 tok/");
+
+		h.handlers.get("message_end")({ message: assistantMessage({ output: 0 }) }, h.ctx);
+		await h.commands.get("tps").handler("reset", h.ctx);
+		assert.equal(h.view.widget, undefined, "resetting a final summary clears the line");
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		assert.equal(h.view.widget[0].slice(0, 14), "TPS ~0.0 tok/s", "and nothing is held afterwards");
+	});
+});
+
+test("a new session does not inherit the held reading", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100, input: 10 });
+		h.handlers.get("session_shutdown")({ reason: "new" }, h.ctx);
+		h.handlers.get("session_start")({ reason: "new" }, h.ctx);
+		setNow(5000);
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		assert.deepEqual(h.view.widget, [
+			"TPS ~0.0 tok/s, avg 0.0 tok/s, out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
+		]);
+	});
 });
 
 test("without a summary on screen a starting response still shows its zero line", async () => {

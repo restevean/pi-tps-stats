@@ -78,11 +78,12 @@ rather than prompt processing, provider queueing, or network latency. Only
 tokens observed after measurement starts contribute to a rate; the token
 counters still report the response's cumulative output.
 
-Until a new response starts measuring, the line keeps showing the previous
-response's final summary instead of a live line stuck at `0.0 tok/s` while the
-provider processes the prompt. When no summary is on screen, as for the first
-response of a session or after `/tps reset` cleared it, the live line is shown
-from the start.
+The line never replaces a real reading with one whose TPS rate is `0.0`: while
+the current rate would read zero, for example while a subagent works in another
+process or while the provider pauses, it keeps showing the last reading with a
+rate above zero until a new one appears. The first response of a session and the
+first response after `/tps reset` have no earlier reading, so they show their
+zeros. Only the display is held; the statistics are unaffected.
 
 When a response ends before a second output token arrives, or when the measured
 window captures less than one full output token, the final summary falls back to

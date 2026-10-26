@@ -3,6 +3,7 @@
  *
  * The default widget uses one line while streaming and replaces it with a
  * provider-usage summary that remains visible until the next response starts.
+ * A reading whose TPS rate is 0 never replaces an earlier one with a real rate.
  * Live metrics prefer cumulative provider usage when it advances during the
  * stream. Until then, clearly labeled estimates count text, thinking, and
  * tool-call delta characters using a four-characters-per-token heuristic.
@@ -89,9 +90,6 @@ interface StreamingState {
 	peakRate: number;
 	lastRender: number;
 	model: string;
-	// The summary on screen when this response started. It stays shown until the
-	// measurement starts, instead of a live line that can only read 0.0 tok/s.
-	heldSummary: FinalState | undefined;
 }
 
 interface FinalState {
@@ -110,6 +108,10 @@ export default function (pi: ExtensionAPI): void {
 	let mode: DisplayMode = "widget";
 	let enabled = true;
 	let state: StatsState | undefined;
+	// The last line shown with a TPS rate above 0. While the current reading would show 0.0
+	// (a subagent working in another process, a provider that pauses, a usage update that
+	// delivers every token at once) this line stays on screen instead of a bare zero.
+	let lastReading: string | undefined;
 	// Session totals over completed responses, weighted by time: total output tokens
 	// divided by total generation seconds (not a mean of per-response averages).
 	let sessionTokens = 0;
@@ -292,16 +294,22 @@ export default function (pi: ExtensionAPI): void {
 		ensureWidget();
 	};
 
+	// Only what is displayed is held back; the rates behind the line are never touched.
+	const showReading = (line: string, rate: number): void => {
+		if (rate > 0) lastReading = line;
+		showLine(rate > 0 ? line : (lastReading ?? line));
+	};
+
 	const render = (): void => {
 		if (!state || !hasUI || !enabled) return;
 
-		const summary =
-			state.kind === "final" ? state : state.measurementStartTime === undefined ? state.heldSummary : undefined;
-		if (summary) {
-			showLine(widgetLine(summary.averageRate, sessionRate(), summary.outputTokens, summary.elapsedSec, summary.usage));
+		if (state.kind === "final") {
+			showReading(
+				widgetLine(state.averageRate, sessionRate(), state.outputTokens, state.elapsedSec, state.usage),
+				state.averageRate,
+			);
 			return;
 		}
-		if (state.kind === "final") return;
 
 		const now = Date.now();
 		const live = rollingRate(state, now);
@@ -309,7 +317,7 @@ export default function (pi: ExtensionAPI): void {
 		const elapsedSec = state.measurementStartTime === undefined ? 0 : (now - state.measurementStartTime) / 1000;
 		const outputTokens = liveOutputTokens(state);
 		const measured = measuredOutputTokens(state, outputTokens);
-		showLine(
+		showReading(
 			widgetLine(
 				live,
 				sessionRate(measured, elapsedSec),
@@ -318,6 +326,7 @@ export default function (pi: ExtensionAPI): void {
 				state.usage,
 				!state.usesReportedUsage,
 			),
+			live,
 		);
 	};
 
@@ -328,6 +337,7 @@ export default function (pi: ExtensionAPI): void {
 		sessionTokens = 0;
 		sessionSeconds = 0;
 		samples = [];
+		lastReading = undefined;
 		ensureWidget();
 	});
 
@@ -337,6 +347,7 @@ export default function (pi: ExtensionAPI): void {
 		sessionTokens = 0;
 		sessionSeconds = 0;
 		samples = [];
+		lastReading = undefined;
 		pendingProviderRequestTime = undefined;
 		ui = undefined;
 		hasUI = false;
@@ -368,7 +379,6 @@ export default function (pi: ExtensionAPI): void {
 			peakRate: 0,
 			lastRender: now,
 			model: event.message.responseModel ?? event.message.model,
-			heldSummary: state?.kind === "final" ? state : undefined,
 		};
 		pendingProviderRequestTime = undefined;
 		render();
@@ -646,10 +656,12 @@ export default function (pi: ExtensionAPI): void {
 					state.samples = [];
 					state.peakRate = 0;
 					state.lastRender = now;
+					lastReading = undefined;
 					render();
 					ctx.ui.notify("Current tps-stats measurement reset", "info");
 				} else if (state?.kind === "final") {
 					state = undefined;
+					lastReading = undefined;
 					clearUi();
 					ctx.ui.notify("Final tps-stats summary cleared", "info");
 				} else {
