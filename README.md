@@ -32,7 +32,8 @@ are not supported there.
 
 While an assistant response streams, the widget shows these fields in order:
 **TPS → session average → output → input → cache read/write → cache read/write % → total → duration**. When streaming
-finishes, the final summary remains visible until the next response starts:
+finishes, the final summary remains visible until the next response starts
+measuring (see [Measurement window](#measurement-window)):
 
 ```text
 TPS 11.4 tok/s, avg 11.4 tok/s, out 33, in 2, cache 0/85,571, cache % 0.0%/100.0%, total 85,606, 2.9s
@@ -76,6 +77,12 @@ window means the rolling and final average rates describe decoding speed
 rather than prompt processing, provider queueing, or network latency. Only
 tokens observed after measurement starts contribute to a rate; the token
 counters still report the response's cumulative output.
+
+Until a new response starts measuring, the line keeps showing the previous
+response's final summary instead of a live line stuck at `0.0 tok/s` while the
+provider processes the prompt. When no summary is on screen, as for the first
+response of a session or after `/tps reset` cleared it, the live line is shown
+from the start.
 
 When a response ends before a second output token arrives, or when the measured
 window captures less than one full output token, the final summary falls back to

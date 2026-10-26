@@ -89,6 +89,9 @@ interface StreamingState {
 	peakRate: number;
 	lastRender: number;
 	model: string;
+	// The summary on screen when this response started. It stays shown until the
+	// measurement starts, instead of a live line that can only read 0.0 tok/s.
+	heldSummary: FinalState | undefined;
 }
 
 interface FinalState {
@@ -292,10 +295,13 @@ export default function (pi: ExtensionAPI): void {
 	const render = (): void => {
 		if (!state || !hasUI || !enabled) return;
 
-		if (state.kind === "final") {
-			showLine(widgetLine(state.averageRate, sessionRate(), state.outputTokens, state.elapsedSec, state.usage));
+		const summary =
+			state.kind === "final" ? state : state.measurementStartTime === undefined ? state.heldSummary : undefined;
+		if (summary) {
+			showLine(widgetLine(summary.averageRate, sessionRate(), summary.outputTokens, summary.elapsedSec, summary.usage));
 			return;
 		}
+		if (state.kind === "final") return;
 
 		const now = Date.now();
 		const live = rollingRate(state, now);
@@ -362,6 +368,7 @@ export default function (pi: ExtensionAPI): void {
 			peakRate: 0,
 			lastRender: now,
 			model: event.message.responseModel ?? event.message.model,
+			heldSummary: state?.kind === "final" ? state : undefined,
 		};
 		pendingProviderRequestTime = undefined;
 		render();

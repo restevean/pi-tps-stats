@@ -592,6 +592,53 @@ test("observes provider usage on updates without content deltas", async () => {
 	});
 });
 
+test("a new response keeps the previous summary on screen until its measurement starts", async () => {
+	for (const status of [false, true]) {
+		await withFakeClock(async (setNow) => {
+			const h = createHarness();
+			if (status) await h.commands.get("tps").handler("status", h.ctx);
+			const shown = () => (status ? h.view.status : h.view.widget?.[0]);
+			await respond(h, setNow, 1000, 2000, { output: 100, input: 10 });
+			const summary = "TPS 100 tok/s, avg 100 tok/s, out 100, in 10, cache 0/0, cache % 0.0%/0.0%, total 110, 1.0s";
+			assert.equal(shown(), summary, `${status ? "status" : "widget"}: the summary is shown`);
+
+			setNow(5000);
+			h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+			assert.equal(shown(), summary, "the next response starting does not replace it with 0.0");
+			setNow(9000);
+			update(h, "x".repeat(4));
+			assert.equal(shown(), summary, "one token is not a measurement yet");
+			await h.commands.get("tps").handler(status ? "status" : "widget", h.ctx);
+			assert.equal(shown(), summary, "switching mode while waiting still shows it");
+
+			setNow(9400);
+			update(h, "x".repeat(4));
+			assert.equal(
+				shown(),
+				"TPS ~0.0 tok/s, avg 100 tok/s, out ~2, in 0, cache 0/0, cache % 0.0%/0.0%, total ~2, 0.0s",
+				"the second token starts the measurement and the live line",
+			);
+			setNow(9600);
+			update(h, "x".repeat(40));
+			assert.match(shown(), /^TPS ~50\.0 tok\/s, /);
+		});
+	}
+});
+
+test("without a summary on screen a starting response still shows its zero line", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100 });
+		await h.commands.get("tps").handler("reset", h.ctx);
+		assert.equal(h.view.widget, undefined, "reset cleared the summary");
+		setNow(5000);
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		assert.deepEqual(h.view.widget, [
+			"TPS ~0.0 tok/s, avg 100 tok/s, out ~0, in 0, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
+		]);
+	});
+});
+
 test("status mode shows the same text as the configured widget, live and final", async () => {
 	await withFakeClock(async (setNow) => {
 		const h = createHarness();
