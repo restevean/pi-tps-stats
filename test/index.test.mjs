@@ -685,6 +685,16 @@ test("a pause longer than the rolling window keeps the last live reading instead
 	}
 });
 
+test("a rate too small to show anything but 0.0 also keeps the last reading", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness();
+		await respond(h, setNow, 1000, 2000, { output: 100, input: 10 });
+		// One token in 30 s is 0.03 tok/s, which the line can only print as 0.0.
+		await respond(h, setNow, 3000, 33000, { output: 1 });
+		assert.equal(h.view.widget[0], FIRST_SUMMARY);
+	});
+});
+
 test("a final summary whose rate is 0 keeps the last reading, and the statistics ignore it", async () => {
 	for (const status of [false, true]) {
 		await withFakeClock(async (setNow) => {
@@ -692,9 +702,10 @@ test("a final summary whose rate is 0 keeps the last reading, and the statistics
 			if (status) await h.commands.get("tps").handler("status", h.ctx);
 			const shown = () => (status ? h.view.status : h.view.widget?.[0]);
 			await respond(h, setNow, 1000, 2000, { output: 100, input: 10 });
+			const notifications = h.view.notifications.length;
 			await respond(h, setNow, 3000, 3500, { output: 0, input: 5 });
 			assert.equal(shown(), FIRST_SUMMARY, `${status ? "status" : "widget"}: the empty response does not replace it`);
-			assert.equal(h.view.notifications.length, status ? 1 : 0, "no notification explains the held line");
+			assert.equal(h.view.notifications.length, notifications, "holding the line adds no notification");
 
 			await respond(h, setNow, 4000, 5000, { output: 300, input: 10 });
 			assert.equal(
@@ -743,7 +754,9 @@ test("/tps reset forgets the held reading: the live line shows its zeros and a c
 		]);
 		setNow(9000);
 		await h.commands.get("tps").handler("on", h.ctx);
-		assert.equal(h.view.widget[0].slice(0, 12), "TPS 0.0 tok/");
+		assert.deepEqual(h.view.widget, [
+			"TPS 0.0 tok/s, avg 20.4 tok/s, out 0, in 0, cache 0/0, cache % 0.0%/0.0%, total 0, 3.9s",
+		]);
 
 		h.handlers.get("message_end")({ message: assistantMessage({ output: 0 }) }, h.ctx);
 		await h.commands.get("tps").handler("reset", h.ctx);

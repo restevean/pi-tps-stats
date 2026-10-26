@@ -295,9 +295,11 @@ export default function (pi: ExtensionAPI): void {
 	};
 
 	// Only what is displayed is held back; the rates behind the line are never touched.
+	// A reading counts as real by its printed rate, so 0.03 tok/s, shown as 0.0, does not.
 	const showReading = (line: string, rate: number): void => {
-		if (rate > 0) lastReading = line;
-		showLine(rate > 0 ? line : (lastReading ?? line));
+		const real = fmtRate(rate) !== fmtRate(0);
+		if (real) lastReading = line;
+		showLine(real ? line : (lastReading ?? line));
 	};
 
 	const render = (): void => {
