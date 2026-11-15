@@ -129,7 +129,7 @@ mientras la tasa actual fuera a marcar cero, por ejemplo mientras un subagente
 trabaja en otro proceso o mientras el proveedor hace una pausa, sigue mostrando
 la última lectura con una tasa mayor que cero hasta que aparece una nueva. La
 primera respuesta de una sesión y la primera tras `/tps reset` no tienen una
-lectura anterior, así que muestran sus ceros. Solo se retiene lo que se muestra;
+lectura anterior, así que muestran sus ceros. Esto incluye el TTFT: mientras la siguiente respuesta espera su primer token, la línea sigue mostrando el TTFT de la respuesta anterior, así que `TTFT --` solo aparece en esas primeras respuestas. Solo se retiene lo que se muestra;
 las estadísticas no se ven afectadas.
 
 Cuando una respuesta termina antes de que llegue un segundo token de salida, o

@@ -127,7 +127,7 @@ the current rate would read zero, for example while a subagent works in another
 process or while the provider pauses, it keeps showing the last reading with a
 rate above zero until a new one appears. The first response of a session and the
 first response after `/tps reset` have no earlier reading, so they show their
-zeros. Only the display is held; the statistics are unaffected.
+zeros. This includes TTFT: while the next response waits for its first token, the line still shows the previous response\'s TTFT, so `TTFT --` only appears on those first responses. Only the display is held; the statistics are unaffected.
 
 When a response ends before a second output token arrives, or when the measured
 window captures less than one full output token, the final summary falls back to
