@@ -1,7 +1,7 @@
 {
 	"name": "pi-tps-stats",
 	"version": "0.1.10",
-	"description": "Built with Gentle Shell, for Gentle Shell (works on plain Pi too). Live TPS, token and cache usage above the Pi prompt, plus a /tps stats panel.",
+	"description": "Built with Gentle Shell, for Gentle Shell (works on plain Pi too). Live TPS, time to first token, and token and cache usage above the Pi prompt, plus a /tps stats panel.",
 	"keywords": [
 		"pi-package",
 		"extension",
@@ -17,6 +17,7 @@
 	"files": [
 		"src",
 		"README.md",
+		"README.es.md",
 		"LICENSE"
 	],
 	"license": "MIT",

@@ -338,8 +338,7 @@ very large one is capped at 10^15. Like any Pi extension it runs with your
 permissions, so pin the version you reviewed: `npm:pi-tps-stats@<version>`, or a
 git tag.
 
-The package has no runtime dependencies and no install scripts, and publishes only
-`src`, `README.md` and `LICENSE`. Dependency build scripts are denied in
+The package has no runtime dependencies and no install scripts, and publishes only `src`, `README.md`, `README.es.md`, `LICENSE` and the `package.json` npm always includes. Dependency build scripts are denied in
 `pnpm-workspace.yaml`, and the tests enforce all of the above.
 
 ## License

@@ -360,7 +360,7 @@ cualquier extensión de Pi, se ejecuta con tus permisos, así que fija la versi�
 que hayas revisado: `npm:pi-tps-stats@<version>`, o una etiqueta de git.
 
 El paquete no tiene dependencias en tiempo de ejecución ni scripts de
-instalación, y publica solo `src`, `README.md` y `LICENSE`. Los scripts de
+instalación, y publica solo `src`, `README.md`, `README.es.md`, `LICENSE` y el `package.json` que npm incluye siempre. Los scripts de
 compilación de las dependencias están denegados en `pnpm-workspace.yaml`, y los
 tests hacen cumplir todo lo anterior.
 

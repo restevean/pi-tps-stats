@@ -24,7 +24,7 @@ test("the package runs no code at install time and ships nothing but its sources
 	);
 	assert.equal(pkg.dependencies, undefined, "no runtime dependencies");
 	assert.equal(pkg.bin, undefined, "no executables");
-	assert.deepEqual(pkg.files, ["src", "README.md", "LICENSE"]);
+	assert.deepEqual(pkg.files, ["src", "README.md", "README.es.md", "LICENSE"]);
 });
 
 test("packages the host provides are peers with the any-version range, and never runtime dependencies", () => {
