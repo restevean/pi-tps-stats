@@ -1,5 +1,7 @@
 # pi-tps-stats
 
+[Spanish](README.es.md)
+
 > **Built with [Gentle Shell](https://github.com/Gentleman-Programming/gentle-shell),
 > for Gentle Shell.** It also works on plain Pi.
 
