@@ -79,8 +79,8 @@ interface StreamingState {
 	kind: "streaming";
 	usage: PromptUsage;
 	responseStartTime: number;
-	providerRequestTime: number | undefined;
-	turnStartTime: number | undefined;
+	// Where TTFT is measured from, fixed at message start: a reset restarts the rates, not the TTFT.
+	ttftStartTime: number;
 	firstOutputTime: number | undefined;
 	measurementStartTime: number | undefined;
 	measurementBaseline: number;
@@ -171,10 +171,7 @@ export default function (pi: ExtensionAPI): void {
 
 	/** Seconds from the provider request, else the turn start, else the message start, to the first output. */
 	const ttftOf = (stream: StreamingState): number | undefined =>
-		stream.firstOutputTime === undefined
-			? undefined
-			: (stream.firstOutputTime - (stream.providerRequestTime ?? stream.turnStartTime ?? stream.responseStartTime)) /
-				1000;
+		stream.firstOutputTime === undefined ? undefined : (stream.firstOutputTime - stream.ttftStartTime) / 1000;
 
 	const sessionTtft = (extra?: number): number | undefined => {
 		const count = sessionTtftCount + (extra === undefined ? 0 : 1);
@@ -426,8 +423,7 @@ export default function (pi: ExtensionAPI): void {
 			kind: "streaming",
 			usage: readUsage(event.message.usage),
 			responseStartTime: now,
-			providerRequestTime: pendingProviderRequestTime,
-			turnStartTime: pendingTurnStartTime,
+			ttftStartTime: pendingProviderRequestTime ?? pendingTurnStartTime ?? now,
 			firstOutputTime: undefined,
 			measurementStartTime: undefined,
 			measurementBaseline: 0,
@@ -696,8 +692,8 @@ export default function (pi: ExtensionAPI): void {
 		switch (action) {
 			case "out-in":
 				showCounters = value === undefined ? !showCounters : value === "on";
-				render();
 				ctx.ui.notify(`tps-stats: out-in ${showCounters ? "on" : "off"}`, "info");
+				render();
 				return Promise.resolve();
 			case "on":
 				enabled = true;

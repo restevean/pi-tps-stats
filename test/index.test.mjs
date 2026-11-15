@@ -9,9 +9,25 @@ import tpsStatsExtension from "../src/index.ts";
 // Most tests predate TTFT and the out-in switch: by default the harness turns the output
 // and input counters on and leaves the TTFT fields out of view.widget and view.status, so those tests
 // keep checking the rest of the line. TTFT tests pass { outIn: false, ttft: true }.
+// What is masked is only the comparison: every line the extension really emits is first
+// checked against the full format below, so TTFT placement and the out-in state are verified
+// in every test, not only in the TTFT ones.
 const TTFT_FIELDS = /, TTFT [^,]+, avg [^,]+/;
+const FULL_LINE =
+	/^TPS ~?\d+(?:\.\d)? tok\/s, avg \d+(?:\.\d)? tok\/s, TTFT (?:--|\d+\.\d\ds), avg (?:--|\d+\.\d\ds), (out ~?[\d,]+, in [\d,]+, )?cache [\d,]+\/[\d,]+, cache % \d+\.\d%\/\d+\.\d%, total ~?[\d,]+, \d+\.\ds$/;
 function createHarness({ mode = "tui", hasUI = true, withKeybindings = true, outIn = true, ttft = false } = {}) {
-	const shown = (line) => (ttft ? line : line.replace(TTFT_FIELDS, ""));
+	// Tracks the out-in state from the extension's own announcements; the counters start hidden.
+	let countersOn = false;
+	const checked = (line) => {
+		const match = FULL_LINE.exec(line);
+		assert.ok(match, `the emitted line has the full TPS format: ${line}`);
+		assert.equal(match[1] !== undefined, countersOn, `out and in are shown only with out-in on: ${line}`);
+		return line;
+	};
+	const shown = (line) => {
+		checked(line);
+		return ttft ? line : line.replace(TTFT_FIELDS, "");
+	};
 	const handlers = new Map();
 	const commands = new Map();
 	const widgets = new Map();
@@ -82,6 +98,8 @@ function createHarness({ mode = "tui", hasUI = true, withKeybindings = true, out
 			view.status = content === undefined ? content : shown(content);
 		},
 		notify(message, type) {
+			if (message === "tps-stats: out-in on") countersOn = true;
+			if (message === "tps-stats: out-in off") countersOn = false;
 			view.notifications.push({ message, type });
 		},
 	};
@@ -1975,5 +1993,29 @@ test("without a provider request event, TTFT runs from the turn start, as with a
 		// A second message in the same turn has no turn start of its own: it runs from its message start.
 		await ttftResponse(h, setNow, { start: 5000, first: 5200, end: 6200, output: 120 });
 		assert.match(h.view.widget[0], /, TTFT 0\.20s, avg 0\.47s, /);
+	});
+});
+
+test("the TTFT average survives /tps reset, a reset keeps the response's TTFT, and a new session clears it", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness({ outIn: false, ttft: true });
+		await ttftResponse(h, setNow, { request: 1000, start: 1000, first: 1500, end: 2500, output: 120 });
+		await h.commands.get("tps").handler("reset", h.ctx);
+		assert.deepEqual(h.view.notifications.at(-1), { message: "Final tps-stats summary cleared", type: "info" });
+		// A reset mid-response, without a provider request or turn start, restarts the rates only.
+		setNow(3000);
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		setNow(3250);
+		update(h, "x".repeat(80), "text_delta", 20);
+		setNow(3500);
+		await h.commands.get("tps").handler("reset", h.ctx);
+		assert.match(h.view.widget[0], /, TTFT 0\.25s, avg 0\.38s, /, "the reset kept the TTFT and the average");
+		setNow(4500);
+		h.handlers.get("message_end")({ message: assistantMessage({ output: 120 }) }, h.ctx);
+		assert.match(h.view.widget[0], /, TTFT 0\.25s, avg 0\.38s, /);
+		// A new session, as after /reload, starts the average over.
+		h.handlers.get("session_start")({ reason: "reload" }, h.ctx);
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		assert.match(h.view.widget[0], /, TTFT --, avg --, /);
 	});
 });
