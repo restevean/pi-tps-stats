@@ -14,14 +14,19 @@ import tpsStatsExtension from "../src/index.ts";
 // in every test, not only in the TTFT ones.
 const TTFT_FIELDS = /, TTFT [^,]+, avg [^,]+/;
 const FULL_LINE =
-	/^TPS ~?\d+(?:\.\d)? tok\/s, avg \d+(?:\.\d)? tok\/s, TTFT (?:--|\d+\.\d\ds), avg (?:--|\d+\.\d\ds), (out ~?[\d,]+, in [\d,]+, )?cache [\d,]+\/[\d,]+, cache % \d+\.\d%\/\d+\.\d%, total ~?[\d,]+, \d+\.\ds$/;
+	/^TPS ~?\d+(?:\.\d)? tok\/s, avg \d+(?:\.\d)? tok\/s, (TTFT (?:--|\d+\.\d\ds), avg (?:--|\d+\.\d\ds), )?(out ~?[\d,]+, in [\d,]+, )?(cache [\d,]+\/[\d,]+, cache % \d+\.\d%\/\d+\.\d%, )?total ~?[\d,]+, \d+\.\ds$/;
 function createHarness({ mode = "tui", hasUI = true, withKeybindings = true, outIn = true, ttft = false } = {}) {
-	// Tracks the out-in state from the extension's own announcements; the counters start hidden.
+	// Tracks each field switch from the extension's own announcements: out and in start
+	// hidden, TTFT and cache start shown.
 	let countersOn = false;
+	let ttftOn = true;
+	let cacheOn = true;
 	const checked = (line) => {
 		const match = FULL_LINE.exec(line);
 		assert.ok(match, `the emitted line has the full TPS format: ${line}`);
-		assert.equal(match[1] !== undefined, countersOn, `out and in are shown only with out-in on: ${line}`);
+		assert.equal(match[1] !== undefined, ttftOn, `TTFT is shown only with ttft on: ${line}`);
+		assert.equal(match[2] !== undefined, countersOn, `out and in are shown only with out-in on: ${line}`);
+		assert.equal(match[3] !== undefined, cacheOn, `cache is shown only with cache on: ${line}`);
 		return line;
 	};
 	const shown = (line) => {
@@ -100,6 +105,10 @@ function createHarness({ mode = "tui", hasUI = true, withKeybindings = true, out
 		notify(message, type) {
 			if (message === "tps-stats: out-in on") countersOn = true;
 			if (message === "tps-stats: out-in off") countersOn = false;
+			if (message === "tps-stats: ttft on") ttftOn = true;
+			if (message === "tps-stats: ttft off") ttftOn = false;
+			if (message === "tps-stats: cache on") cacheOn = true;
+			if (message === "tps-stats: cache off") cacheOn = false;
 			view.notifications.push({ message, type });
 		},
 	};
@@ -1202,7 +1211,7 @@ test("a bare /tps opens a menu with every action instead of acting on its own", 
 	assert.equal(h.selectCalls.length, 1);
 	assert.equal(h.selectCalls[0].title, "TPS · widget");
 	const names = h.selectCalls[0].options.map((option) => option.split(/\s/)[0]);
-	assert.deepEqual(names, ["stats", "widget", "status", "on", "off", "reset", "out-in"]);
+	assert.deepEqual(names, ["stats", "widget", "status", "on", "off", "reset", "out-in", "ttft", "cache"]);
 	assert.ok(
 		h.selectCalls[0].options.every((option) => option.includes("  ")),
 		"each option carries a description",
@@ -1265,7 +1274,7 @@ test("an explicit argument skips the menu, and a removed action is refused", asy
 	assert.equal(h.view.notifications.length, notifications + 1, "the refused action reports once");
 	assert.equal(
 		h.view.notifications.at(-1).message,
-		"Usage: /tps [stats|widget|status|on|off|reset|out-in]",
+		"Usage: /tps [stats|widget|status|on|off|reset|out-in|ttft|cache]",
 		"a removed action names the supported ones",
 	);
 	assert.equal(h.view.notifications.at(-1).type, "error");
@@ -1291,7 +1300,7 @@ test("without a UI a bare /tps never opens a menu and reports the usage", async 
 	await h.commands.get("tps").handler("", h.ctx);
 	assert.equal(h.selectCalls.length, 0);
 	assert.equal(h.view.notifications.length, 1, "the usage is the only report");
-	assert.equal(h.view.notifications[0].message, "Usage: /tps [stats|widget|status|on|off|reset|out-in]");
+	assert.equal(h.view.notifications[0].message, "Usage: /tps [stats|widget|status|on|off|reset|out-in|ttft|cache]");
 	assert.equal(h.view.notifications[0].type, "error");
 	assert.equal(h.widgets.size, 0, "a refused bare /tps mounts nothing");
 });
@@ -1970,7 +1979,7 @@ test("/tps out-in on|off shows and hides the output and input counters; a bare o
 		await h.commands.get("tps").handler("out-in maybe", h.ctx);
 		assert.equal(h.view.notifications.length, before + 1);
 		assert.deepEqual(h.view.notifications.at(-1), {
-			message: "Usage: /tps [stats|widget|status|on|off|reset|out-in]",
+			message: "Usage: /tps [stats|widget|status|on|off|reset|out-in|ttft|cache]",
 			type: "error",
 		});
 		assert.deepEqual(h.view.widget, [short], "a refused argument leaves the line as it was");
@@ -2048,5 +2057,52 @@ test("while the next response waits for its first token, the line keeps the prev
 		setNow(4000);
 		h.handlers.get("message_update")({ message: assistantMessage(), assistantMessageEvent: { type: "start" } }, h.ctx);
 		assert.deepEqual(h.view.widget, [previous], "no TTFT -- and no zero rate while waiting");
+	});
+});
+
+for (const [action, field, hidden] of [
+	["ttft", "TTFT", "TPS 100 tok/s, avg 100 tok/s, cache 0/0, cache % 0.0%/0.0%, total 120, 1.0s"],
+	["cache", "cache", "TPS 100 tok/s, avg 100 tok/s, TTFT 0.50s, avg 0.50s, total 120, 1.0s"],
+]) {
+	test(`/tps ${action} on|off shows and hides ${field}; it starts shown and a bare ${action} toggles it`, async () => {
+		await withFakeClock(async (setNow) => {
+			const h = createHarness({ outIn: false, ttft: true });
+			await ttftResponse(h, setNow, { request: 1000, start: 1100, first: 1500, end: 2500, output: 120 });
+			const full = "TPS 100 tok/s, avg 100 tok/s, TTFT 0.50s, avg 0.50s, cache 0/0, cache % 0.0%/0.0%, total 120, 1.0s";
+			assert.deepEqual(h.view.widget, [full], "shown by default");
+			await h.commands.get("tps").handler(`${action} off`, h.ctx);
+			assert.deepEqual(h.view.widget, [hidden]);
+			assert.deepEqual(h.view.notifications.at(-1), { message: `tps-stats: ${action} off`, type: "info" });
+			await h.commands.get("tps").handler(`${action} on`, h.ctx);
+			assert.deepEqual(h.view.widget, [full]);
+			assert.deepEqual(h.view.notifications.at(-1), { message: `tps-stats: ${action} on`, type: "info" });
+			await h.commands.get("tps").handler(action, h.ctx);
+			assert.deepEqual(h.view.widget, [hidden], "a bare action toggles");
+			h.selections.push(action);
+			await h.commands.get("tps").handler("", h.ctx);
+			assert.deepEqual(h.view.widget, [full], "the menu entry toggles too");
+			await h.commands.get("tps").handler("status", h.ctx);
+			await h.commands.get("tps").handler(`${action} off`, h.ctx);
+			assert.equal(h.view.status, hidden, "status mode follows the same switch");
+			const before = h.view.notifications.length;
+			await h.commands.get("tps").handler(`${action} maybe`, h.ctx);
+			assert.equal(h.view.notifications.length, before + 1);
+			assert.deepEqual(h.view.notifications.at(-1), {
+				message: "Usage: /tps [stats|widget|status|on|off|reset|out-in|ttft|cache]",
+				type: "error",
+			});
+			assert.equal(h.view.status, hidden, "a refused argument leaves the line as it was");
+		});
+	});
+}
+
+test("hiding TTFT still measures it: the average keeps counting while hidden", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness({ outIn: false, ttft: true });
+		await h.commands.get("tps").handler("ttft off", h.ctx);
+		await ttftResponse(h, setNow, { request: 1000, start: 1000, first: 1500, end: 2500, output: 120 });
+		await ttftResponse(h, setNow, { request: 3000, start: 3000, first: 4000, end: 5000, output: 120 });
+		await h.commands.get("tps").handler("ttft on", h.ctx);
+		assert.match(h.view.widget[0], /, TTFT 1\.00s, avg 0\.75s, /);
 	});
 });

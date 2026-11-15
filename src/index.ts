@@ -12,7 +12,8 @@
  * peak rates; the token counters still report cumulative response output.
  * Time to first token (TTFT) runs from the provider request (or, without one,
  * the turn start) to the first output event and is shown after TPS with its session average. The output and input
- * counters are hidden until /tps out-in on. The status
+ * counters are hidden until /tps out-in on; /tps ttft and /tps cache hide or show
+ * the TTFT and cache fields, which start shown. The status
  * mode publishes the same line as the widget.
  */
 
@@ -39,6 +40,10 @@ const hoverYellow = (text: string): string => `\u001b[33m${text}\u001b[39m`;
 const stripAnsi = (text: string): string => text.replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
 
 type DisplayMode = "widget" | "status";
+type FieldSwitch = "out-in" | "ttft" | "cache";
+const FIELD_SWITCHES: readonly string[] = ["out-in", "ttft", "cache"] satisfies FieldSwitch[];
+const isFieldSwitch = (value: string | undefined): value is FieldSwitch =>
+	value !== undefined && FIELD_SWITCHES.includes(value);
 
 // Usage counts reach us from the provider through the host. Anything that is not a finite
 // number becomes 0 (it is never coerced, so no hostile toString/valueOf runs) and huge
@@ -111,8 +116,9 @@ type StatsState = StreamingState | FinalState;
 export default function (pi: ExtensionAPI): void {
 	let mode: DisplayMode = "widget";
 	let enabled = true;
-	// The output and input counters on the line; off until /tps out-in on.
-	let showCounters = false;
+	// Optional fields on the line, each with its own /tps switch. Hiding a field never stops
+	// measuring it: the TTFT average keeps counting and total still includes every count.
+	const shownFields: Record<FieldSwitch, boolean> = { "out-in": false, ttft: true, cache: true };
 	let state: StatsState | undefined;
 	// The last line shown with a TPS rate above 0. While the current reading would show 0.0
 	// (a subagent working in another process, a provider that pauses, a usage update that
@@ -200,9 +206,9 @@ export default function (pi: ExtensionAPI): void {
 		const cache = `cache ${count(usage.cacheRead)}/${count(usage.cacheWrite)}, cache % ${percent(usage.cacheRead)}/${percent(usage.cacheWrite)}`;
 		return [
 			tps,
-			ttft,
-			...(showCounters ? [outIn] : []),
-			cache,
+			...(shownFields.ttft ? [ttft] : []),
+			...(shownFields["out-in"] ? [outIn] : []),
+			...(shownFields.cache ? [cache] : []),
 			`total ${estimateMark}${count(total)}`,
 			`${elapsedSec.toFixed(1)}s`,
 		].join(", ");
@@ -671,6 +677,8 @@ export default function (pi: ExtensionAPI): void {
 		["off", "Hide the display"],
 		["reset", "Clear the summary or restart the measurement"],
 		["out-in", "Toggle the output and input counters (or out-in on|off)"],
+		["ttft", "Toggle the TTFT and its average (or ttft on|off)"],
+		["cache", "Toggle the cache counts and cache % (or cache on|off)"],
 	];
 	const MENU_LABELS = MENU.map(([action, description]) => `${action.padEnd(6)}  ${description}`);
 	// One action list feeds all three renderings: the menu labels, the usage message and the command help.
@@ -687,16 +695,17 @@ export default function (pi: ExtensionAPI): void {
 
 	const run = (typed: string, ctx: ExtensionCommandContext): Promise<void> => {
 		const [arg, value, ...rest] = typed.split(/\s+/);
-		// Only out-in takes a second word, and only on or off.
+		// Only the field switches take a second word, and only on or off.
 		const valid =
-			rest.length === 0 && (value === undefined || (arg === "out-in" && (value === "on" || value === "off")));
+			rest.length === 0 && (value === undefined || (isFieldSwitch(arg) && (value === "on" || value === "off")));
 		const action = valid ? (arg ?? "") : "";
+		if (isFieldSwitch(action)) {
+			shownFields[action] = value === undefined ? !shownFields[action] : value === "on";
+			ctx.ui.notify(`tps-stats: ${action} ${shownFields[action] ? "on" : "off"}`, "info");
+			render();
+			return Promise.resolve();
+		}
 		switch (action) {
-			case "out-in":
-				showCounters = value === undefined ? !showCounters : value === "on";
-				ctx.ui.notify(`tps-stats: out-in ${showCounters ? "on" : "off"}`, "info");
-				render();
-				return Promise.resolve();
 			case "on":
 				enabled = true;
 				ensureWidget();

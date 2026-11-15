@@ -46,29 +46,42 @@ TPS 11.4 tok/s, avg 11.4 tok/s, TTFT 0.82s, avg 1.10s, cache 0/85,571, cache % 0
 `/tps out-in on` adds the output and input counters between the TTFT average
 and the cache counts. They are off by default; `/tps out-in off` hides them
 again and a bare `/tps out-in` toggles them. The switch affects only `out` and
-`in`: `cache`, `cache %` and `total` are always shown, and `total` always
-includes output and input, whether or not they are shown:
+`in`, and `total` always includes output and input, whether or not they are
+shown:
 
 ```text
 TPS 11.4 tok/s, avg 11.4 tok/s, TTFT 0.82s, avg 1.10s, out 33, in 2, cache 0/85,571, cache % 0.0%/100.0%, total 85,606, 2.9s
+```
+
+`/tps ttft` and `/tps cache` work the same way for their fields, but they start
+shown: `/tps ttft off` hides `TTFT` and its `avg`, and `/tps cache off` hides
+`cache` and `cache %`; `on` shows them again and the bare command toggles them.
+Hiding a field never stops measuring it: the TTFT average keeps counting while
+it is hidden, and `total` still includes the cache counts. `TPS`, its `avg`,
+`total` and the duration are always shown. Each switch applies to the widget
+and the status alike and lasts until `/reload` or a restart. With all three
+hidden the line reads:
+
+```text
+TPS 11.4 tok/s, avg 11.4 tok/s, total 85,606, 2.9s
 ```
 
 ### What each value means
 
 Values from the examples above, left to right:
 
-| Field                    | Example       | Meaning                                                                                                                                      |
-| ------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TPS`                    | `11.4 tok/s`  | Output tokens per second: the rolling rate while streaming, the response average once it ends.                                               |
-| `avg` (after TPS)        | `11.4 tok/s`  | Session TPS average: all output tokens over all generation time, weighted by time.                                                           |
-| `TTFT`                   | `0.82s`       | Time to first token of this response: from the provider request (or the turn start) to the first output. `--` until it comes.                |
-| `avg` (after TTFT)       | `1.10s`       | Session TTFT average: plain mean over the responses so far, the current one included once its first output arrives. `--` until there is one. |
-| `out` (`/tps out-in on`) | `33`          | Output tokens the model generated in this response. Hidden by default.                                                                       |
-| `in` (`/tps out-in on`)  | `2`           | Uncached input tokens of this response, outside cache reads and writes. Hidden by default.                                                   |
-| `cache`                  | `0/85,571`    | Prompt tokens read from the cache / written to the cache in this response.                                                                   |
-| `cache %`                | `0.0%/100.0%` | Cache read / cache write as a share of the prompt (`input + cacheRead + cacheWrite`).                                                        |
-| `total`                  | `85,606`      | All tokens of this response: output + input + cache read + cache write. Always shown.                                                        |
-| duration                 | `2.9s`        | Measured generation window, normally from the second output token, so it excludes TTFT (see [Measurement window](#measurement-window)).      |
+| Field                        | Example       | Meaning                                                                                                                                      |
+| ---------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TPS`                        | `11.4 tok/s`  | Output tokens per second: the rolling rate while streaming, the response average once it ends.                                               |
+| `avg` (after TPS)            | `11.4 tok/s`  | Session TPS average: all output tokens over all generation time, weighted by time.                                                           |
+| `TTFT` (`/tps ttft off`)     | `0.82s`       | Time to first token of this response: from the provider request (or the turn start) to the first output. `--` until it comes.                |
+| `avg` (after TTFT)           | `1.10s`       | Session TTFT average: plain mean over the responses so far, the current one included once its first output arrives. `--` until there is one. |
+| `out` (`/tps out-in on`)     | `33`          | Output tokens the model generated in this response. Hidden by default.                                                                       |
+| `in` (`/tps out-in on`)      | `2`           | Uncached input tokens of this response, outside cache reads and writes. Hidden by default.                                                   |
+| `cache` (`/tps cache off`)   | `0/85,571`    | Prompt tokens read from the cache / written to the cache in this response.                                                                   |
+| `cache %` (`/tps cache off`) | `0.0%/100.0%` | Cache read / cache write as a share of the prompt (`input + cacheRead + cacheWrite`).                                                        |
+| `total`                      | `85,606`      | All tokens of this response: output + input + cache read + cache write. Always shown.                                                        |
+| duration                     | `2.9s`        | Measured generation window, normally from the second output token, so it excludes TTFT (see [Measurement window](#measurement-window)).      |
 
 A `~` before `TPS`, `out` or `total` marks an estimate made from the streamed text
 while the provider has not reported usage yet.
@@ -298,6 +311,12 @@ to switch back.
 | `/tps out-in on`  | Show `out` and `in` on the line (`total` is always shown) |
 | `/tps out-in off` | Hide `out` and `in` again (the default)                   |
 | `/tps out-in`     | Toggle `out` and `in`                                     |
+| `/tps ttft on`    | Show `TTFT` and its `avg` (the default)                   |
+| `/tps ttft off`   | Hide `TTFT` and its `avg` (still measured)                |
+| `/tps ttft`       | Toggle `TTFT` and its `avg`                               |
+| `/tps cache on`   | Show `cache` and `cache %` (the default)                  |
+| `/tps cache off`  | Hide `cache` and `cache %` (`total` still counts them)    |
+| `/tps cache`      | Toggle `cache` and `cache %`                              |
 
 ## Development
 
@@ -331,7 +350,8 @@ and do not load it alongside an installed copy of this extension.
 - The widget also shows the session average (`avg`), weighted by generation time.
 - The widget renders above the editor in `#7E86AE` and shows one fixed line:
   `TPS`, TTFT with its average, cache read/write, `cache %`, total and
-  duration; `/tps out-in on` adds output and input.
+  duration; `/tps out-in on` adds output and input, and `/tps ttft off` and
+  `/tps cache off` hide TTFT and the cache fields.
 - `/tps status` publishes that same line instead of the original compact format.
 - The widget is mounted once and repainted in place instead of being registered
   again on every update.

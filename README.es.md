@@ -46,29 +46,42 @@ TPS 11.4 tok/s, avg 11.4 tok/s, TTFT 0.82s, avg 1.10s, cache 0/85,571, cache % 0
 `/tps out-in on` añade los contadores de salida y entrada entre el TTFT promedio y
 los contadores de caché. Están desactivados por defecto; `/tps out-in off` los
 vuelve a ocultar y `/tps out-in` sin argumento los alterna. El interruptor solo
-afecta a `out` e `in`: `cache`, `cache %` y `total` se muestran siempre, y
-`total` siempre incluye la salida y la entrada, se muestren o no:
+afecta a `out` e `in`, y `total` siempre incluye la salida y la entrada, se
+muestren o no:
 
 ```text
 TPS 11.4 tok/s, avg 11.4 tok/s, TTFT 0.82s, avg 1.10s, out 33, in 2, cache 0/85,571, cache % 0.0%/100.0%, total 85,606, 2.9s
+```
+
+`/tps ttft` y `/tps cache` funcionan igual para sus campos, pero empiezan
+visibles: `/tps ttft off` oculta `TTFT` y su `avg`, y `/tps cache off` oculta
+`cache` y `cache %`; `on` los vuelve a mostrar y el comando sin argumento los
+alterna. Ocultar un campo nunca deja de medirlo: el TTFT promedio sigue
+contando mientras está oculto, y `total` sigue incluyendo los contadores de
+caché. `TPS`, su `avg`, `total` y la duración se muestran siempre. Cada
+interruptor se aplica por igual al widget y al status, y dura hasta `/reload`
+o un reinicio. Con los tres ocultos, la línea queda así:
+
+```text
+TPS 11.4 tok/s, avg 11.4 tok/s, total 85,606, 2.9s
 ```
 
 ### Qué significa cada valor
 
 Valores de los ejemplos anteriores, de izquierda a derecha:
 
-| Campo                    | Ejemplo       | Significado                                                                                                                                                    |
-| ------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TPS`                    | `11.4 tok/s`  | Tokens de salida por segundo: la tasa móvil durante el streaming y el promedio de la respuesta al terminar.                                                    |
-| `avg` (tras TPS)         | `11.4 tok/s`  | TPS promedio de la sesión: todos los tokens de salida entre todo el tiempo de generación, ponderado por tiempo.                                                |
-| `TTFT`                   | `0.82s`       | Tiempo hasta el primer token de esta respuesta: desde la petición al proveedor (o el inicio del turno) hasta la primera salida. `--` hasta que llega.          |
-| `avg` (tras TTFT)        | `1.10s`       | TTFT promedio de la sesión: promedio simple de las respuestas hasta ahora, incluida la actual en cuanto llega su primera salida. `--` hasta que hay una.       |
-| `out` (`/tps out-in on`) | `33`          | Tokens de salida que generó el modelo en esta respuesta. Oculto por defecto.                                                                                   |
-| `in` (`/tps out-in on`)  | `2`           | Tokens de entrada sin caché de esta respuesta, aparte de las lecturas y escrituras de caché. Oculto por defecto.                                               |
-| `cache`                  | `0/85,571`    | Tokens del prompt leídos de la caché / escritos en la caché en esta respuesta.                                                                                 |
-| `cache %`                | `0.0%/100.0%` | Caché leída / caché escrita como parte del prompt (`input + cacheRead + cacheWrite`).                                                                          |
-| `total`                  | `85,606`      | Todos los tokens de esta respuesta: salida + entrada + caché leída + caché escrita. Se muestra siempre.                                                        |
-| duración                 | `2.9s`        | Ventana de generación medida, normalmente desde el segundo token de salida, así que no incluye el TTFT (consulta [Ventana de medición](#ventana-de-medición)). |
+| Campo                        | Ejemplo       | Significado                                                                                                                                                    |
+| ---------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TPS`                        | `11.4 tok/s`  | Tokens de salida por segundo: la tasa móvil durante el streaming y el promedio de la respuesta al terminar.                                                    |
+| `avg` (tras TPS)             | `11.4 tok/s`  | TPS promedio de la sesión: todos los tokens de salida entre todo el tiempo de generación, ponderado por tiempo.                                                |
+| `TTFT` (`/tps ttft off`)     | `0.82s`       | Tiempo hasta el primer token de esta respuesta: desde la petición al proveedor (o el inicio del turno) hasta la primera salida. `--` hasta que llega.          |
+| `avg` (tras TTFT)            | `1.10s`       | TTFT promedio de la sesión: promedio simple de las respuestas hasta ahora, incluida la actual en cuanto llega su primera salida. `--` hasta que hay una.       |
+| `out` (`/tps out-in on`)     | `33`          | Tokens de salida que generó el modelo en esta respuesta. Oculto por defecto.                                                                                   |
+| `in` (`/tps out-in on`)      | `2`           | Tokens de entrada sin caché de esta respuesta, aparte de las lecturas y escrituras de caché. Oculto por defecto.                                               |
+| `cache` (`/tps cache off`)   | `0/85,571`    | Tokens del prompt leídos de la caché / escritos en la caché en esta respuesta.                                                                                 |
+| `cache %` (`/tps cache off`) | `0.0%/100.0%` | Caché leída / caché escrita como parte del prompt (`input + cacheRead + cacheWrite`).                                                                          |
+| `total`                      | `85,606`      | Todos los tokens de esta respuesta: salida + entrada + caché leída + caché escrita. Se muestra siempre.                                                        |
+| duración                     | `2.9s`        | Ventana de generación medida, normalmente desde el segundo token de salida, así que no incluye el TTFT (consulta [Ventana de medición](#ventana-de-medición)). |
 
 Un `~` delante de `TPS`, `out` o `total` indica una estimación hecha a partir del
 texto recibido mientras el proveedor aún no ha informado del uso.
@@ -314,6 +327,12 @@ prompts. Usa `/tps status` para publicar el mismo texto como status, y
 | `/tps out-in on`  | Muestra `out` e `in` en la línea (`total` se muestra siempre)  |
 | `/tps out-in off` | Vuelve a ocultar `out` e `in` (por defecto)                    |
 | `/tps out-in`     | Alterna `out` e `in`                                           |
+| `/tps ttft on`    | Muestra `TTFT` y su `avg` (por defecto)                        |
+| `/tps ttft off`   | Oculta `TTFT` y su `avg` (se sigue midiendo)                   |
+| `/tps ttft`       | Alterna `TTFT` y su `avg`                                      |
+| `/tps cache on`   | Muestra `cache` y `cache %` (por defecto)                      |
+| `/tps cache off`  | Oculta `cache` y `cache %` (`total` los sigue contando)        |
+| `/tps cache`      | Alterna `cache` y `cache %`                                    |
 
 ## Desarrollo
 
@@ -351,7 +370,8 @@ extensión.
   tiempo de generación.
 - El widget se dibuja sobre el editor en `#7E86AE` y muestra una línea fija:
   `TPS`, TTFT con su promedio, caché leída/escrita, `cache %`, total y duración;
-  `/tps out-in on` añade la salida y la entrada.
+  `/tps out-in on` añade la salida y la entrada, y `/tps ttft off` y
+  `/tps cache off` ocultan el TTFT y los campos de caché.
 - `/tps status` publica esa misma línea en lugar del formato compacto original.
 - El widget se monta una vez y se repinta en su sitio, en lugar de registrarse
   de nuevo en cada actualización.
