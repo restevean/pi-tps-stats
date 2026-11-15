@@ -1,6 +1,6 @@
 {
 	"name": "pi-tps-stats",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"description": "Live TPS, time to first token and cache usage above the Pi prompt; pick the fields and open stats with /tps. Built with Gentle Shell, for Gentle Shell; also works with plain Pi.",
 	"keywords": [
 		"pi-package",
