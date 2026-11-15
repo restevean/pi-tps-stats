@@ -20,8 +20,9 @@ changing the active theme or the rest of the UI.
 In terminal mode, the widget is registered once per visible lifetime. Streaming
 updates, subsequent responses, and active measurement resets repaint that same
 component instead of registering it again. Long lines are truncated to the
-terminal width, keeping the TPS text on one row, followed by one blank row. Switching to status mode, hiding
-the display, or ending the session removes only this extension's widget.
+terminal width, keeping the TPS text on one row, followed by one blank row.
+Switching to status mode, hiding the display, or ending the session removes only
+this extension's widget.
 
 This prevents TPS updates from moving the widget relative to other
 widgets. The widget uses the above-editor area and is mounted, empty, when the
@@ -33,9 +34,10 @@ keeps the existing string-array widget path because custom terminal components
 are not supported there.
 
 While an assistant response streams, the widget shows these fields in order:
-**TPS → session average → TTFT → session average TTFT → cache read/write → cache read/write % → total → duration**. When streaming
-finishes, the final summary remains visible until the next response starts
-measuring (see [Measurement window](#measurement-window)):
+**TPS → session average → TTFT → session average TTFT → cache read/write → cache
+read/write % → total → duration**. When streaming finishes, the final summary
+remains visible until the next response starts measuring (see [Measurement
+window](#measurement-window)):
 
 ```text
 TPS 11.4 tok/s, avg 11.4 tok/s, TTFT 0.82s, avg 1.10s, cache 0/85,571, cache % 0.0%/100.0%, total 85,606, 2.9s
@@ -72,13 +74,16 @@ A `~` before `TPS`, `out` or `total` marks an estimate made from the streamed te
 while the provider has not reported usage yet.
 
 TTFT (time to first token) is the time from the provider request to the first
-output of the response: text, thinking or a tool call. Providers that send no request event, such as `claude-bridge`, which hands the request to Claude Code, have it measured from the start of the turn instead, so it also includes their own startup time. A second message in the same turn, with neither, runs from the start of that message. It reads `--` until the
-first output arrives. Its `avg` is the plain mean TTFT of the session's
-completed responses, including the response in progress once its first output
-arrives. Responses that produced no output, and responses Pi reports as aborted
-or failed, are left out of that mean, but their own line still shows their
-TTFT. A new session or `/reload` starts the mean over, and `/tps reset` does
-not clear it.
+output of the response: text, thinking or a tool call. Providers that send no
+request event, such as `claude-bridge`, which hands the request to Claude Code,
+have it measured from the start of the turn instead, so it also includes their
+own startup time. A second message in the same turn, with neither, runs from the
+start of that message. It reads `--` until the first output arrives. Its `avg`
+is the plain mean TTFT of the session's completed responses, including the
+response in progress once its first output arrives. Responses that produced no
+output, and responses Pi reports as aborted or failed, are left out of that
+mean, but their own line still shows their TTFT. A new session or `/reload`
+starts the mean over, and `/tps reset` does not clear it.
 
 Counts use full integers with English thousands separators. `total` is the sum
 of output, input, cache-read, and cache-write tokens for the current response,
@@ -127,7 +132,9 @@ the current rate would read zero, for example while a subagent works in another
 process or while the provider pauses, it keeps showing the last reading with a
 rate above zero until a new one appears. The first response of a session and the
 first response after `/tps reset` have no earlier reading, so they show their
-zeros. This includes TTFT: while the next response waits for its first token, the line still shows the previous response\'s TTFT, so `TTFT --` only appears on those first responses. Only the display is held; the statistics are unaffected.
+zeros. This includes TTFT: while the next response waits for its first token,
+the line still shows the previous response\'s TTFT, so `TTFT --` only appears on
+those first responses. Only the display is held; the statistics are unaffected.
 
 When a response ends before a second output token arrives, or when the measured
 window captures less than one full output token, the final summary falls back to
@@ -175,12 +182,14 @@ assistant message that produced output since the session started. Aborted, faile
 empty messages, and messages left with less than one token after a `/tps reset`, are
 skipped, and are also left out of the `avg` on the widget line. The panel contains:
 
-- Two compact bar graphs with a value axis, one for TPS and one for cache read %,
-  drawn oldest to newest. Each message is a bar two columns wide, one blank column apart, and the bars
-  are six rows tall; when there are more messages than fit, only the newest are
-  drawn, and on a short terminal (under 27 rows) the graphs shrink to three rows. Each graph header carries
-  its average, then its maximum and minimum (there is no separate TPS summary row). A blank row separates the title
-  from the scope line, and another one the scope line from the first graph.
+- Two compact bar graphs with a value axis, one for TPS and one for cache read
+  %, drawn oldest to newest. Each message is a bar two columns wide, one blank
+  column apart, and the bars are six rows tall; when there are more messages
+  than fit, only the newest are drawn, and on a short terminal (under 27 rows)
+  the graphs shrink to three rows. Each graph header carries its average, then
+  its maximum and minimum (there is no separate TPS summary row). A blank row
+  separates the title from the scope line, and another one the scope line from
+  the first graph.
 - **Cache write %**: average, maximum and minimum (the same order as the graph
   headers) on a line below the cache read graph, after one blank row; it has no graph of its
   own.
@@ -338,8 +347,10 @@ very large one is capped at 10^15. Like any Pi extension it runs with your
 permissions, so pin the version you reviewed: `npm:pi-tps-stats@<version>`, or a
 git tag.
 
-The package has no runtime dependencies and no install scripts, and publishes only `src`, `README.md`, `README.es.md`, `LICENSE` and the `package.json` npm always includes. Dependency build scripts are denied in
-`pnpm-workspace.yaml`, and the tests enforce all of the above.
+The package has no runtime dependencies and no install scripts, and publishes
+only `src`, `README.md`, `README.es.md`, `LICENSE` and the `package.json` npm
+always includes. Dependency build scripts are denied in `pnpm-workspace.yaml`,
+and the tests enforce all of the above.
 
 ## License
 

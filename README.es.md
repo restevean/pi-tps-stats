@@ -75,12 +75,16 @@ texto recibido mientras el proveedor aún no ha informado del uso.
 
 El TTFT (time to first token, tiempo hasta el primer token) es el tiempo desde
 la petición al proveedor hasta la primera salida de la respuesta: texto,
-thinking o una llamada a una herramienta. Con los proveedores que no emiten el evento de petición, como `claude-bridge`, que delega la petición en Claude Code, se mide desde el inicio del turno, así que incluye también su propio tiempo de arranque. Un segundo mensaje dentro del mismo turno, sin ninguno de los dos, cuenta desde el inicio de ese mensaje. Muestra `--` hasta que llega la
-primera salida. Su `avg` es el promedio simple del TTFT de las respuestas
-completadas de la sesión, incluida la respuesta en curso en cuanto llega su
-primera salida. Las respuestas sin salida y las que Pi marca como abortadas o
-fallidas quedan fuera de ese promedio, pero su propia línea sí muestra su TTFT.
-Una sesión nueva o `/reload` reinician el promedio, y `/tps reset` no lo borra.
+thinking o una llamada a una herramienta. Con los proveedores que no emiten el
+evento de petición, como `claude-bridge`, que delega la petición en Claude Code,
+se mide desde el inicio del turno, así que incluye también su propio tiempo de
+arranque. Un segundo mensaje dentro del mismo turno, sin ninguno de los dos,
+cuenta desde el inicio de ese mensaje. Muestra `--` hasta que llega la primera
+salida. Su `avg` es el promedio simple del TTFT de las respuestas completadas de
+la sesión, incluida la respuesta en curso en cuanto llega su primera salida. Las
+respuestas sin salida y las que Pi marca como abortadas o fallidas quedan fuera
+de ese promedio, pero su propia línea sí muestra su TTFT. Una sesión nueva o
+`/reload` reinician el promedio, y `/tps reset` no lo borra.
 
 Los contadores usan enteros completos con separadores de miles en inglés.
 `total` es la suma de los tokens de salida, entrada, caché leída y caché escrita
@@ -119,18 +123,22 @@ y le aplica su propio color, así que `#7E86AE` solo se aplica al widget.
 
 Las tasas de TPS en vivo y final empiezan a medir solo después de observar un
 segundo token de salida. Dejar el tiempo hasta el primer token (que se muestra
-aparte como TTFT) fuera de la ventana de medición hace que las tasas móvil y promedio describan la velocidad de decodificación, no el procesamiento del prompt,
-la cola del proveedor ni la latencia de red. Solo los tokens observados después
-de empezar la medición cuentan para una tasa; los contadores de tokens siguen
-mostrando la salida acumulada de la respuesta.
+aparte como TTFT) fuera de la ventana de medición hace que las tasas móvil y
+promedio describan la velocidad de decodificación, no el procesamiento del
+prompt, la cola del proveedor ni la latencia de red. Solo los tokens observados
+después de empezar la medición cuentan para una tasa; los contadores de tokens
+siguen mostrando la salida acumulada de la respuesta.
 
 La línea nunca sustituye una lectura real por otra cuya tasa de TPS sea `0.0`:
 mientras la tasa actual fuera a marcar cero, por ejemplo mientras un subagente
 trabaja en otro proceso o mientras el proveedor hace una pausa, sigue mostrando
 la última lectura con una tasa mayor que cero hasta que aparece una nueva. La
 primera respuesta de una sesión y la primera tras `/tps reset` no tienen una
-lectura anterior, así que muestran sus ceros. Esto incluye el TTFT: mientras la siguiente respuesta espera su primer token, la línea sigue mostrando el TTFT de la respuesta anterior, así que `TTFT --` solo aparece en esas primeras respuestas. Solo se retiene lo que se muestra;
-las estadísticas no se ven afectadas.
+lectura anterior, así que muestran sus ceros. Esto incluye el TTFT: mientras la
+siguiente respuesta espera su primer token, la línea sigue mostrando el TTFT de
+la respuesta anterior, así que `TTFT --` solo aparece en esas primeras
+respuestas. Solo se retiene lo que se muestra; las estadísticas no se ven
+afectadas.
 
 Cuando una respuesta termina antes de que llegue un segundo token de salida, o
 cuando la ventana medida captura menos de un token de salida completo, el
@@ -147,9 +155,9 @@ Tras `/tps reset` durante una respuesta, las tasas en vivo y final usan solo la
 salida posterior al reinicio. Mientras la respuesta llega, `out` y `total`
 tampoco cuentan la salida anterior al reinicio, así que bajan al reiniciar; el
 total final de tokens sigue describiendo la respuesta completa. El reinicio no
-cambia el TTFT de la respuesta ni el TTFT promedio de la sesión. Si el uso del proveedor no está disponible en el momento del
-reinicio, la salida anterior se estima a partir de sus fragmentos y se resta del
-cálculo de la tasa final.
+cambia el TTFT de la respuesta ni el TTFT promedio de la sesión. Si el uso del
+proveedor no está disponible en el momento del reinicio, la salida anterior se
+estima a partir de sus fragmentos y se resta del cálculo de la tasa final.
 
 ## Estadísticas de la sesión
 
@@ -360,9 +368,10 @@ cualquier extensión de Pi, se ejecuta con tus permisos, así que fija la versi�
 que hayas revisado: `npm:pi-tps-stats@<version>`, o una etiqueta de git.
 
 El paquete no tiene dependencias en tiempo de ejecución ni scripts de
-instalación, y publica solo `src`, `README.md`, `README.es.md`, `LICENSE` y el `package.json` que npm incluye siempre. Los scripts de
-compilación de las dependencias están denegados en `pnpm-workspace.yaml`, y los
-tests hacen cumplir todo lo anterior.
+instalación, y publica solo `src`, `README.md`, `README.es.md`, `LICENSE` y el
+`package.json` que npm incluye siempre. Los scripts de compilación de las
+dependencias están denegados en `pnpm-workspace.yaml`, y los tests hacen cumplir
+todo lo anterior.
 
 ## Licencia
 
