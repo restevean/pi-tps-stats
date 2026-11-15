@@ -144,8 +144,10 @@ La duración al final de la línea es la ventana de generación medida, no
 necesariamente el tiempo total de la respuesta.
 
 Tras `/tps reset` durante una respuesta, las tasas en vivo y final usan solo la
-salida posterior al reinicio. El total final de tokens sigue describiendo la
-respuesta completa. Si el uso del proveedor no está disponible en el momento del
+salida posterior al reinicio. Mientras la respuesta llega, `out` y `total`
+tampoco cuentan la salida anterior al reinicio, así que bajan al reiniciar; el
+total final de tokens sigue describiendo la respuesta completa. El reinicio no
+cambia el TTFT de la respuesta ni el TTFT promedio de la sesión. Si el uso del proveedor no está disponible en el momento del
 reinicio, la salida anterior se estima a partir de sus fragmentos y se resta del
 cálculo de la tasa final.
 

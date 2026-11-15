@@ -140,7 +140,10 @@ The duration at the end of the line is the measured generation window, not
 necessarily the whole response time.
 
 After `/tps reset` during a response, live and final rates use only output
-since the reset. The final token total still describes the complete response.
+since the reset. While the response streams, `out` and `total` also leave out
+the output before the reset, so they drop at the reset; the final token total
+still describes the complete response. The response's TTFT and the session TTFT
+average are not changed by a reset.
 If provider usage is unavailable at reset time, the earlier output is estimated
 from its deltas and subtracted from the final rate calculation.
 
