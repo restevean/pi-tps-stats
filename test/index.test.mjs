@@ -6,7 +6,12 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import tpsStatsExtension from "../src/index.ts";
 
-function createHarness({ mode = "tui", hasUI = true, withKeybindings = true } = {}) {
+// Most tests predate TTFT and the out-in switch: by default the harness turns the output
+// and input counters on and leaves the TTFT fields out of view.widget and view.status, so those tests
+// keep checking the rest of the line. TTFT tests pass { outIn: false, ttft: true }.
+const TTFT_FIELDS = /, TTFT [^,]+, avg [^,]+/;
+function createHarness({ mode = "tui", hasUI = true, withKeybindings = true, outIn = true, ttft = false } = {}) {
+	const shown = (line) => (ttft ? line : line.replace(TTFT_FIELDS, ""));
 	const handlers = new Map();
 	const commands = new Map();
 	const widgets = new Map();
@@ -28,7 +33,7 @@ function createHarness({ mode = "tui", hasUI = true, withKeybindings = true } = 
 		view.rows = content;
 		const text = content?.length ? content.slice(0, -1) : content;
 		view.rawWidget = text;
-		view.widget = text?.map((line) => line.replace("\u001b[38;2;126;134;174m", "").replace("\u001b[39m", ""));
+		view.widget = text?.map((line) => shown(line.replace("\u001b[38;2;126;134;174m", "").replace("\u001b[39m", "")));
 	};
 	const tui = {
 		terminal: { rows: 60 },
@@ -74,7 +79,7 @@ function createHarness({ mode = "tui", hasUI = true, withKeybindings = true } = 
 			});
 		},
 		setStatus(_key, content) {
-			view.status = content;
+			view.status = content === undefined ? content : shown(content);
 		},
 		notify(message, type) {
 			view.notifications.push({ message, type });
@@ -97,6 +102,11 @@ function createHarness({ mode = "tui", hasUI = true, withKeybindings = true } = 
 
 	tpsStatsExtension(pi);
 	handlers.get("session_start")({ reason: "startup" }, ctx);
+	if (outIn) {
+		// A typed argument runs synchronously, before the handler's first await.
+		void commands.get("tps").handler("out-in on", ctx);
+		view.notifications.length = 0;
+	}
 
 	return {
 		tui,
@@ -1172,7 +1182,7 @@ test("a bare /tps opens a menu with every action instead of acting on its own", 
 	assert.equal(h.selectCalls.length, 1);
 	assert.equal(h.selectCalls[0].title, "TPS · widget");
 	const names = h.selectCalls[0].options.map((option) => option.split(/\s/)[0]);
-	assert.deepEqual(names, ["stats", "widget", "status", "on", "off", "reset"]);
+	assert.deepEqual(names, ["stats", "widget", "status", "on", "off", "reset", "out-in"]);
 	assert.ok(
 		h.selectCalls[0].options.every((option) => option.includes("  ")),
 		"each option carries a description",
@@ -1235,7 +1245,7 @@ test("an explicit argument skips the menu, and a removed action is refused", asy
 	assert.equal(h.view.notifications.length, notifications + 1, "the refused action reports once");
 	assert.equal(
 		h.view.notifications.at(-1).message,
-		"Usage: /tps [stats|widget|status|on|off|reset]",
+		"Usage: /tps [stats|widget|status|on|off|reset|out-in]",
 		"a removed action names the supported ones",
 	);
 	assert.equal(h.view.notifications.at(-1).type, "error");
@@ -1261,7 +1271,7 @@ test("without a UI a bare /tps never opens a menu and reports the usage", async 
 	await h.commands.get("tps").handler("", h.ctx);
 	assert.equal(h.selectCalls.length, 0);
 	assert.equal(h.view.notifications.length, 1, "the usage is the only report");
-	assert.equal(h.view.notifications[0].message, "Usage: /tps [stats|widget|status|on|off|reset]");
+	assert.equal(h.view.notifications[0].message, "Usage: /tps [stats|widget|status|on|off|reset|out-in]");
 	assert.equal(h.view.notifications[0].type, "error");
 	assert.equal(h.widgets.size, 0, "a refused bare /tps mounts nothing");
 });
@@ -1856,5 +1866,114 @@ test("the panel asks the host for the tui.select.cancel binding and nothing else
 		};
 		await closesOn(h, setNow, "x");
 		assert.deepEqual([...new Set(ids)], ["tui.select.cancel"]);
+	});
+});
+
+// TTFT: from the provider request (or the message start without one) to the first output.
+async function ttftResponse(h, setNow, { request, start, first, end, output, stopReason = "stop" }) {
+	if (request !== undefined) {
+		setNow(request);
+		h.handlers.get("before_provider_request")({}, h.ctx);
+	}
+	setNow(start);
+	h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+	setNow(first);
+	update(h, "x".repeat(80), "text_delta", 20);
+	setNow(end);
+	h.handlers.get("message_end")({ message: assistantMessage({ output, stopReason }) }, h.ctx);
+}
+
+test("the line shows the response TTFT and the session average after TPS, without output and input counters by default", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness({ outIn: false, ttft: true });
+		await ttftResponse(h, setNow, { request: 1000, start: 1100, first: 1500, end: 2500, output: 120 });
+		assert.deepEqual(h.view.widget, [
+			"TPS 100 tok/s, avg 100 tok/s, TTFT 0.50s, avg 0.50s, cache 0/0, cache % 0.0%/0.0%, total 120, 1.0s",
+		]);
+		await ttftResponse(h, setNow, { request: 3000, start: 3000, first: 4000, end: 6000, output: 220 });
+		assert.deepEqual(h.view.widget, [
+			"TPS 100 tok/s, avg 100 tok/s, TTFT 1.00s, avg 0.75s, cache 0/0, cache % 0.0%/0.0%, total 220, 2.0s",
+		]);
+		// An aborted response shows its own TTFT but stays out of the average, like its TPS.
+		await ttftResponse(h, setNow, {
+			request: 7000,
+			start: 7000,
+			first: 10000,
+			end: 11000,
+			output: 120,
+			stopReason: "aborted",
+		});
+		assert.deepEqual(h.view.widget, [
+			"TPS 100 tok/s, avg 100 tok/s, TTFT 3.00s, avg 0.75s, cache 0/0, cache % 0.0%/0.0%, total 120, 1.0s",
+		]);
+		// Without a provider request event TTFT runs from the message start.
+		await ttftResponse(h, setNow, { start: 12000, first: 12250, end: 13250, output: 120 });
+		assert.deepEqual(h.view.widget, [
+			"TPS 100 tok/s, avg 100 tok/s, TTFT 0.25s, avg 0.58s, cache 0/0, cache % 0.0%/0.0%, total 120, 1.0s",
+		]);
+		await h.commands.get("tps").handler("status", h.ctx);
+		assert.equal(
+			h.view.status,
+			"TPS 100 tok/s, avg 100 tok/s, TTFT 0.25s, avg 0.58s, cache 0/0, cache % 0.0%/0.0%, total 120, 1.0s",
+		);
+	});
+});
+
+test("TTFT and its average read -- until there is a first output token", () => {
+	const h = createHarness({ outIn: false, ttft: true });
+	h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+	assert.deepEqual(h.view.widget, [
+		"TPS ~0.0 tok/s, avg 0.0 tok/s, TTFT --, avg --, cache 0/0, cache % 0.0%/0.0%, total ~0, 0.0s",
+	]);
+});
+
+test("/tps out-in on|off shows and hides the output and input counters; a bare out-in toggles them", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness({ outIn: false, ttft: true });
+		await ttftResponse(h, setNow, { request: 1000, start: 1100, first: 1500, end: 2500, output: 120 });
+		const short = "TPS 100 tok/s, avg 100 tok/s, TTFT 0.50s, avg 0.50s, cache 0/0, cache % 0.0%/0.0%, total 120, 1.0s";
+		const full =
+			"TPS 100 tok/s, avg 100 tok/s, TTFT 0.50s, avg 0.50s, out 120, in 0, cache 0/0, cache % 0.0%/0.0%, total 120, 1.0s";
+		await h.commands.get("tps").handler("out-in on", h.ctx);
+		assert.deepEqual(h.view.widget, [full]);
+		assert.deepEqual(h.view.notifications.at(-1), { message: "tps-stats: out-in on", type: "info" });
+		await h.commands.get("tps").handler("OUT-IN  off", h.ctx);
+		assert.deepEqual(h.view.widget, [short]);
+		assert.deepEqual(h.view.notifications.at(-1), { message: "tps-stats: out-in off", type: "info" });
+		await h.commands.get("tps").handler("out-in", h.ctx);
+		assert.deepEqual(h.view.widget, [full]);
+		h.selections.push("out-in");
+		await h.commands.get("tps").handler("", h.ctx);
+		assert.deepEqual(h.view.widget, [short], "the menu entry toggles too");
+		assert.deepEqual(h.view.notifications.at(-1), { message: "tps-stats: out-in off", type: "info" });
+		const before = h.view.notifications.length;
+		await h.commands.get("tps").handler("out-in maybe", h.ctx);
+		assert.equal(h.view.notifications.length, before + 1);
+		assert.deepEqual(h.view.notifications.at(-1), {
+			message: "Usage: /tps [stats|widget|status|on|off|reset|out-in]",
+			type: "error",
+		});
+		assert.deepEqual(h.view.widget, [short], "a refused argument leaves the line as it was");
+		await h.commands.get("tps").handler("on extra", h.ctx);
+		assert.equal(h.view.notifications.at(-1).type, "error", "other actions take no second word");
+	});
+});
+
+test("without a provider request event, TTFT runs from the turn start, as with a bridged provider", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness({ outIn: false, ttft: true });
+		setNow(1000);
+		h.handlers.get("turn_start")({ type: "turn_start" }, h.ctx);
+		// A bridged provider opens the message only when its first output is ready.
+		await ttftResponse(h, setNow, { start: 1800, first: 1800, end: 2800, output: 120 });
+		assert.match(h.view.widget[0], /, TTFT 0\.80s, avg 0\.80s, /);
+		// A provider request still wins over the turn start.
+		setNow(3000);
+		h.handlers.get("turn_start")({ type: "turn_start" }, h.ctx);
+		await ttftResponse(h, setNow, { request: 3500, start: 3600, first: 3900, end: 4900, output: 120 });
+		assert.match(h.view.widget[0], /, TTFT 0\.40s, avg 0\.60s, /);
+		// A second message in the same turn has no turn start of its own: it runs from its message start.
+		await ttftResponse(h, setNow, { start: 5000, first: 5200, end: 6200, output: 120 });
+		assert.match(h.view.widget[0], /, TTFT 0\.20s, avg 0\.47s, /);
 	});
 });

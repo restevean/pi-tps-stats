@@ -31,18 +31,59 @@ keeps the existing string-array widget path because custom terminal components
 are not supported there.
 
 While an assistant response streams, the widget shows these fields in order:
-**TPS → session average → output → input → cache read/write → cache read/write % → total → duration**. When streaming
+**TPS → session average → TTFT → session average TTFT → cache read/write → cache read/write % → total → duration**. When streaming
 finishes, the final summary remains visible until the next response starts
 measuring (see [Measurement window](#measurement-window)):
 
 ```text
-TPS 11.4 tok/s, avg 11.4 tok/s, out 33, in 2, cache 0/85,571, cache % 0.0%/100.0%, total 85,606, 2.9s
+TPS 11.4 tok/s, avg 11.4 tok/s, TTFT 0.82s, avg 1.10s, cache 0/85,571, cache % 0.0%/100.0%, total 85,606, 2.9s
 ```
+
+`/tps out-in on` adds the output and input counters between the TTFT average
+and the cache counts. They are off by default; `/tps out-in off` hides them
+again and a bare `/tps out-in` toggles them. The switch affects only `out` and
+`in`: `cache`, `cache %` and `total` are always shown, and `total` always
+includes output and input, whether or not they are shown:
+
+```text
+TPS 11.4 tok/s, avg 11.4 tok/s, TTFT 0.82s, avg 1.10s, out 33, in 2, cache 0/85,571, cache % 0.0%/100.0%, total 85,606, 2.9s
+```
+
+### What each value means
+
+Values from the examples above, left to right:
+
+| Field                    | Example       | Meaning                                                                                                                                      |
+| ------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TPS`                    | `11.4 tok/s`  | Output tokens per second: the rolling rate while streaming, the response average once it ends.                                               |
+| `avg` (after TPS)        | `11.4 tok/s`  | Session TPS average: all output tokens over all generation time, weighted by time.                                                           |
+| `TTFT`                   | `0.82s`       | Time to first token of this response: from the provider request (or the turn start) to the first output. `--` until it comes.                |
+| `avg` (after TTFT)       | `1.10s`       | Session TTFT average: plain mean over the responses so far, the current one included once its first output arrives. `--` until there is one. |
+| `out` (`/tps out-in on`) | `33`          | Output tokens the model generated in this response. Hidden by default.                                                                       |
+| `in` (`/tps out-in on`)  | `2`           | Uncached input tokens of this response, outside cache reads and writes. Hidden by default.                                                   |
+| `cache`                  | `0/85,571`    | Prompt tokens read from the cache / written to the cache in this response.                                                                   |
+| `cache %`                | `0.0%/100.0%` | Cache read / cache write as a share of the prompt (`input + cacheRead + cacheWrite`).                                                        |
+| `total`                  | `85,606`      | All tokens of this response: output + input + cache read + cache write. Always shown.                                                        |
+| duration                 | `2.9s`        | Measured generation window, normally from the second output token, so it excludes TTFT (see [Measurement window](#measurement-window)).      |
+
+A `~` before `TPS`, `out` or `total` marks an estimate made from the streamed text
+while the provider has not reported usage yet.
+
+TTFT (time to first token) is the time from the provider request to the first
+output of the response: text, thinking or a tool call. Providers that send no request event, such as `claude-bridge`, which hands the request to Claude Code, have it measured from the start of the turn instead, so it also includes their own startup time. A second message in the same turn, with neither, runs from the start of that message. It reads `--` until the
+first output arrives. Its `avg` is the plain mean TTFT of the session's
+completed responses, including the response in progress once its first output
+arrives. Responses that produced no output, and responses Pi reports as aborted
+or failed, are left out of that mean, but their own line still shows their
+TTFT. A new session or `/reload` starts the mean over, and `/tps reset` does
+not clear it.
 
 Counts use full integers with English thousands separators. `total` is the sum
 of output, input, cache-read, and cache-write tokens for the current response,
-not the session. Both modes always show all fields; a zero input/cache field
-reflects Pi's normalized usage and does not prove the provider reported a zero.
+not the session, whether or not `out` and `in` are shown. Both modes show the
+same fields; a zero
+input/cache field reflects Pi's normalized usage and does not prove the
+provider reported a zero.
 
 `cache %` immediately follows the cache counts. Each percentage uses
 `input + cacheRead + cacheWrite` as its denominator, excluding output, and is
@@ -72,7 +113,8 @@ applies its own status color, so `#7E86AE` only applies to the widget.
 ## Measurement window
 
 Live and final TPS rates start measuring only after a second output
-token has been observed. Keeping time-to-first-token out of the measurement
+token has been observed. Keeping time-to-first-token (shown on its own as
+TTFT) out of the measurement
 window means the rolling and final average rates describe decoding speed
 rather than prompt processing, provider queueing, or network latency. Only
 tokens observed after measurement starts contribute to a rate; the token
@@ -171,8 +213,8 @@ Pi normalizes prompt usage into separate `input`, `cacheRead`, and `cacheWrite`
 counts. `input` is the uncached, non-cache-write portion; cache-read tokens are
 shown separately and are never described as tokens processed by the model.
 Because Pi initializes unavailable usage fields to zero, a zero shows as `0`
-rather than as confirmed provider data. Time to first token (TTFT) and the
-approximate prompt rate are no longer displayed.
+rather than as confirmed provider data. The approximate prompt rate is not
+displayed.
 
 ## Install
 
@@ -230,15 +272,18 @@ The persistent `#7E86AE` widget is enabled above the prompt editor by default.
 Use `/tps status` to publish the same text as a status instead, and `/tps widget`
 to switch back.
 
-| Command       | Effect                                                 |
-| ------------- | ------------------------------------------------------ |
-| `/tps`        | Open a menu of the actions below (arrows, Enter, Esc)  |
-| `/tps on`     | Enable the previously selected display mode            |
-| `/tps off`    | Hide the display                                       |
-| `/tps widget` | Enable the persistent widget above the editor          |
-| `/tps status` | Publish the same line as a host status instead         |
-| `/tps stats`  | Open a panel with session statistics and graphs        |
-| `/tps reset`  | Reset an active measurement or clear the final summary |
+| Command           | Effect                                                    |
+| ----------------- | --------------------------------------------------------- |
+| `/tps`            | Open a menu of the actions below (arrows, Enter, Esc)     |
+| `/tps on`         | Enable the previously selected display mode               |
+| `/tps off`        | Hide the display                                          |
+| `/tps widget`     | Enable the persistent widget above the editor             |
+| `/tps status`     | Publish the same line as a host status instead            |
+| `/tps stats`      | Open a panel with session statistics and graphs           |
+| `/tps reset`      | Reset an active measurement or clear the final summary    |
+| `/tps out-in on`  | Show `out` and `in` on the line (`total` is always shown) |
+| `/tps out-in off` | Hide `out` and `in` again (the default)                   |
+| `/tps out-in`     | Toggle `out` and `in`                                     |
 
 ## Development
 
@@ -271,11 +316,12 @@ and do not load it alongside an installed copy of this extension.
 - `/tps stats` shows a statistics panel with graphs.
 - The widget also shows the session average (`avg`), weighted by generation time.
 - The widget renders above the editor in `#7E86AE` and shows one fixed line:
-  `TPS`, output, input, cache read/write, `cache %`, total and duration.
+  `TPS`, TTFT with its average, cache read/write, `cache %`, total and
+  duration; `/tps out-in on` adds output and input.
 - `/tps status` publishes that same line instead of the original compact format.
 - The widget is mounted once and repainted in place instead of being registered
   again on every update.
-- TTFT and the approximate prompt rate are not displayed.
+- The approximate prompt rate is not displayed.
 
 ## Security
 

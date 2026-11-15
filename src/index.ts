@@ -10,7 +10,9 @@
  * The measurement starts only after a second output token has been
  * observed, so time-to-first-token latency never dilutes rolling, average, or
  * peak rates; the token counters still report cumulative response output.
- * Final summaries also report the response's input and cache usage. The status
+ * Time to first token (TTFT) runs from the provider request (or, without one,
+ * the turn start) to the first output event and is shown after TPS with its session average. The output and input
+ * counters are hidden until /tps out-in on. The status
  * mode publishes the same line as the widget.
  */
 
@@ -78,6 +80,7 @@ interface StreamingState {
 	usage: PromptUsage;
 	responseStartTime: number;
 	providerRequestTime: number | undefined;
+	turnStartTime: number | undefined;
 	firstOutputTime: number | undefined;
 	measurementStartTime: number | undefined;
 	measurementBaseline: number;
@@ -99,6 +102,7 @@ interface FinalState {
 	elapsedSec: number;
 	averageRate: number;
 	peakRate: number;
+	ttftSec: number | undefined;
 	model: string;
 }
 
@@ -107,6 +111,8 @@ type StatsState = StreamingState | FinalState;
 export default function (pi: ExtensionAPI): void {
 	let mode: DisplayMode = "widget";
 	let enabled = true;
+	// The output and input counters on the line; off until /tps out-in on.
+	let showCounters = false;
 	let state: StatsState | undefined;
 	// The last line shown with a TPS rate above 0. While the current reading would show 0.0
 	// (a subagent working in another process, a provider that pauses, a usage update that
@@ -116,11 +122,17 @@ export default function (pi: ExtensionAPI): void {
 	// divided by total generation seconds (not a mean of per-response averages).
 	let sessionTokens = 0;
 	let sessionSeconds = 0;
+	// Session TTFT, a plain mean over the completed responses that produced output.
+	let sessionTtftSum = 0;
+	let sessionTtftCount = 0;
 	// One entry per completed response, for /tps stats. Cleared with the session.
 	let samples: ResponseSample[] = [];
 	let ui: ExtensionUIContext | undefined;
 	let hasUI = false;
 	let pendingProviderRequestTime: number | undefined;
+	// Bridged providers (claude-bridge) send no provider request event and open the message only
+	// when their first output is ready, so TTFT falls back to the start of the turn.
+	let pendingTurnStartTime: number | undefined;
 	let customWidgets = false;
 	let widgetOwner: object | undefined;
 	let widgetContent = "";
@@ -157,12 +169,26 @@ export default function (pi: ExtensionAPI): void {
 		return seconds > 0 ? (sessionTokens + extraTokens) / seconds : 0;
 	};
 
+	/** Seconds from the provider request, else the turn start, else the message start, to the first output. */
+	const ttftOf = (stream: StreamingState): number | undefined =>
+		stream.firstOutputTime === undefined
+			? undefined
+			: (stream.firstOutputTime - (stream.providerRequestTime ?? stream.turnStartTime ?? stream.responseStartTime)) /
+				1000;
+
+	const sessionTtft = (extra?: number): number | undefined => {
+		const count = sessionTtftCount + (extra === undefined ? 0 : 1);
+		return count > 0 ? (sessionTtftSum + (extra ?? 0)) / count : undefined;
+	};
+
 	const widgetLine = (
 		rate: number,
 		averageRate: number,
 		output: number,
 		elapsedSec: number,
 		usage: PromptUsage,
+		ttftSec: number | undefined,
+		averageTtftSec: number | undefined,
 		estimated = false,
 	): string => {
 		const count = (value: number): string => Math.round(value).toLocaleString("en-US");
@@ -170,7 +196,19 @@ export default function (pi: ExtensionAPI): void {
 		const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
 		const total = output + promptTokens;
 		const percent = (tokens: number): string => `${(promptTokens > 0 ? (tokens / promptTokens) * 100 : 0).toFixed(1)}%`;
-		return `TPS ${estimateMark}${fmtRate(rate)} tok/s, avg ${fmtRate(averageRate)} tok/s, out ${estimateMark}${count(output)}, in ${count(usage.input)}, cache ${count(usage.cacheRead)}/${count(usage.cacheWrite)}, cache % ${percent(usage.cacheRead)}/${percent(usage.cacheWrite)}, total ${estimateMark}${count(total)}, ${elapsedSec.toFixed(1)}s`;
+		const seconds = (value: number | undefined): string => (value === undefined ? "--" : `${value.toFixed(2)}s`);
+		const tps = `TPS ${estimateMark}${fmtRate(rate)} tok/s, avg ${fmtRate(averageRate)} tok/s`;
+		const ttft = `TTFT ${seconds(ttftSec)}, avg ${seconds(averageTtftSec)}`;
+		const outIn = `out ${estimateMark}${count(output)}, in ${count(usage.input)}`;
+		const cache = `cache ${count(usage.cacheRead)}/${count(usage.cacheWrite)}, cache % ${percent(usage.cacheRead)}/${percent(usage.cacheWrite)}`;
+		return [
+			tps,
+			ttft,
+			...(showCounters ? [outIn] : []),
+			cache,
+			`total ${estimateMark}${count(total)}`,
+			`${elapsedSec.toFixed(1)}s`,
+		].join(", ");
 	};
 
 	const clearWidget = (): void => {
@@ -307,7 +345,15 @@ export default function (pi: ExtensionAPI): void {
 
 		if (state.kind === "final") {
 			showReading(
-				widgetLine(state.averageRate, sessionRate(), state.outputTokens, state.elapsedSec, state.usage),
+				widgetLine(
+					state.averageRate,
+					sessionRate(),
+					state.outputTokens,
+					state.elapsedSec,
+					state.usage,
+					state.ttftSec,
+					sessionTtft(),
+				),
 				state.averageRate,
 			);
 			return;
@@ -319,6 +365,7 @@ export default function (pi: ExtensionAPI): void {
 		const elapsedSec = state.measurementStartTime === undefined ? 0 : (now - state.measurementStartTime) / 1000;
 		const outputTokens = liveOutputTokens(state);
 		const measured = measuredOutputTokens(state, outputTokens);
+		const ttftSec = ttftOf(state);
 		showReading(
 			widgetLine(
 				live,
@@ -326,6 +373,8 @@ export default function (pi: ExtensionAPI): void {
 				outputTokens,
 				elapsedSec,
 				state.usage,
+				ttftSec,
+				sessionTtft(ttftSec),
 				!state.usesReportedUsage,
 			),
 			live,
@@ -338,6 +387,8 @@ export default function (pi: ExtensionAPI): void {
 		customWidgets = ctx.mode === "tui";
 		sessionTokens = 0;
 		sessionSeconds = 0;
+		sessionTtftSum = 0;
+		sessionTtftCount = 0;
 		samples = [];
 		lastReading = undefined;
 		ensureWidget();
@@ -348,11 +399,18 @@ export default function (pi: ExtensionAPI): void {
 		state = undefined;
 		sessionTokens = 0;
 		sessionSeconds = 0;
+		sessionTtftSum = 0;
+		sessionTtftCount = 0;
 		samples = [];
 		lastReading = undefined;
 		pendingProviderRequestTime = undefined;
+		pendingTurnStartTime = undefined;
 		ui = undefined;
 		hasUI = false;
+	});
+
+	pi.on("turn_start", () => {
+		pendingTurnStartTime = Date.now();
 	});
 
 	pi.on("before_provider_request", () => {
@@ -369,6 +427,7 @@ export default function (pi: ExtensionAPI): void {
 			usage: readUsage(event.message.usage),
 			responseStartTime: now,
 			providerRequestTime: pendingProviderRequestTime,
+			turnStartTime: pendingTurnStartTime,
 			firstOutputTime: undefined,
 			measurementStartTime: undefined,
 			measurementBaseline: 0,
@@ -383,6 +442,7 @@ export default function (pi: ExtensionAPI): void {
 			model: event.message.responseModel ?? event.message.model,
 		};
 		pendingProviderRequestTime = undefined;
+		pendingTurnStartTime = undefined;
 		render();
 	});
 
@@ -473,6 +533,12 @@ export default function (pi: ExtensionAPI): void {
 		// statistics.
 		// The widget line still shows that final window either way.
 		const abortedOrFailed = event.message.stopReason === "aborted" || event.message.stopReason === "error";
+		const ttftSec = ttftOf(stream);
+		// TTFT is a latency, not a rate: any response that produced output counts unless it was cut short.
+		if (ttftSec !== undefined && !abortedOrFailed) {
+			sessionTtftSum += ttftSec;
+			sessionTtftCount += 1;
+		}
 		if (measuredTokens >= 1 && !abortedOrFailed) {
 			sessionTokens += measuredTokens;
 			sessionSeconds += generationSeconds;
@@ -493,6 +559,7 @@ export default function (pi: ExtensionAPI): void {
 			elapsedSec,
 			averageRate,
 			peakRate,
+			ttftSec,
 			model: event.message.responseModel ?? event.message.model,
 		};
 		render();
@@ -605,6 +672,7 @@ export default function (pi: ExtensionAPI): void {
 		["on", "Show the display"],
 		["off", "Hide the display"],
 		["reset", "Clear the summary or restart the measurement"],
+		["out-in", "Toggle the output and input counters (or out-in on|off)"],
 	];
 	const MENU_LABELS = MENU.map(([action, description]) => `${action.padEnd(6)}  ${description}`);
 	// One action list feeds all three renderings: the menu labels, the usage message and the command help.
@@ -619,8 +687,18 @@ export default function (pi: ExtensionAPI): void {
 		return choice?.split(/\s/)[0];
 	};
 
-	const run = (arg: string, ctx: ExtensionCommandContext): Promise<void> => {
-		switch (arg) {
+	const run = (typed: string, ctx: ExtensionCommandContext): Promise<void> => {
+		const [arg, value, ...rest] = typed.split(/\s+/);
+		// Only out-in takes a second word, and only on or off.
+		const valid =
+			rest.length === 0 && (value === undefined || (arg === "out-in" && (value === "on" || value === "off")));
+		const action = valid ? (arg ?? "") : "";
+		switch (action) {
+			case "out-in":
+				showCounters = value === undefined ? !showCounters : value === "on";
+				render();
+				ctx.ui.notify(`tps-stats: out-in ${showCounters ? "on" : "off"}`, "info");
+				return Promise.resolve();
 			case "on":
 				enabled = true;
 				ensureWidget();
@@ -634,8 +712,8 @@ export default function (pi: ExtensionAPI): void {
 				return Promise.resolve();
 			case "widget":
 			case "status":
-				if (mode !== arg) clearUi();
-				mode = arg;
+				if (mode !== action) clearUi();
+				mode = action;
 				enabled = true;
 				ensureWidget();
 				render();
