@@ -408,6 +408,8 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.on("turn_start", () => {
 		pendingTurnStartTime = Date.now();
+		// A request that never opened a message (a failed call) must not be the next turn's TTFT origin.
+		pendingProviderRequestTime = undefined;
 	});
 
 	pi.on("before_provider_request", () => {

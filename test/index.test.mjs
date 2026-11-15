@@ -121,8 +121,10 @@ function createHarness({ mode = "tui", hasUI = true, withKeybindings = true, out
 	tpsStatsExtension(pi);
 	handlers.get("session_start")({ reason: "startup" }, ctx);
 	if (outIn) {
-		// A typed argument runs synchronously, before the handler's first await.
+		// A typed argument runs synchronously, before the handler's first await. If that ever
+		// changes, fail here with a clear message instead of in every test that reads the line.
 		void commands.get("tps").handler("out-in on", ctx);
+		assert.ok(countersOn, "out-in on must take effect synchronously for the harness default");
 		view.notifications.length = 0;
 	}
 
@@ -2017,5 +2019,34 @@ test("the TTFT average survives /tps reset, a reset keeps the response's TTFT, a
 		h.handlers.get("session_start")({ reason: "reload" }, h.ctx);
 		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
 		assert.match(h.view.widget[0], /, TTFT --, avg --, /);
+	});
+});
+
+test("a provider request that never opened a message does not leak into the next turn's TTFT", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness({ outIn: false, ttft: true });
+		// The request fails before any message starts.
+		setNow(1000);
+		h.handlers.get("before_provider_request")({}, h.ctx);
+		// The next turn goes through a bridged provider that sends no request event.
+		setNow(5000);
+		h.handlers.get("turn_start")({ type: "turn_start" }, h.ctx);
+		await ttftResponse(h, setNow, { start: 5800, first: 5800, end: 6800, output: 120 });
+		assert.match(h.view.widget[0], /, TTFT 0\.80s, avg 0\.80s, /);
+	});
+});
+
+test("while the next response waits for its first token, the line keeps the previous TTFT", async () => {
+	await withFakeClock(async (setNow) => {
+		const h = createHarness({ outIn: false, ttft: true });
+		await ttftResponse(h, setNow, { request: 1000, start: 1000, first: 1500, end: 2500, output: 120 });
+		const previous = h.view.widget[0];
+		assert.match(previous, /, TTFT 0\.50s, avg 0\.50s, /);
+		setNow(3000);
+		h.handlers.get("before_provider_request")({}, h.ctx);
+		h.handlers.get("message_start")({ message: assistantMessage() }, h.ctx);
+		setNow(4000);
+		h.handlers.get("message_update")({ message: assistantMessage(), assistantMessageEvent: { type: "start" } }, h.ctx);
+		assert.deepEqual(h.view.widget, [previous], "no TTFT -- and no zero rate while waiting");
 	});
 });
